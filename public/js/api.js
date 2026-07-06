@@ -1,0 +1,106 @@
+// API client. Token lives in localStorage under a per-account key; workout
+// history and local caches are ALWAYS namespaced by user id (§2.5) so account
+// switching on a shared device can never leak data between views.
+export const state = {
+  token: localStorage.getItem('rp_token') || null,
+  user: null,
+};
+
+export function setSession(token, user) {
+  state.token = token; state.user = user;
+  if (token) localStorage.setItem('rp_token', token);
+  else localStorage.removeItem('rp_token');
+}
+
+export class ApiFail extends Error {
+  constructor(status, code, message) { super(message); this.status = status; this.code = code; }
+}
+
+export async function api(path, { method = 'GET', body, raw = false } = {}) {
+  const headers = {};
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  let r;
+  try {
+    r = await fetch(`/api${path}`, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+  } catch {
+    throw new ApiFail(0, 'offline', 'You appear to be offline. Your data is saved locally and will sync when you reconnect.');
+  }
+  if (raw) return r;
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new ApiFail(r.status, data.error || 'error', data.message || `Request failed (${r.status})`);
+  return data;
+}
+
+export async function loadMe() {
+  if (!state.token) return null;
+  try {
+    const { user } = await api('/auth/me');
+    // Hard verification gate: an unverified session (only possible with a
+    // legacy token) is discarded entirely — there is no unverified mode.
+    if (!user.emailVerified) { setSession(null, null); return null; }
+    state.user = user;
+    return user;
+  } catch (e) {
+    if (e.status === 401 || e.status === 403) setSession(null, null);
+    return null;
+  }
+}
+
+/* ---------------- toasts ---------------- */
+export function toast(msg, kind = 'info', ms = 4200) {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
+
+/* ---------------- units & formatting (§14 consistent unit handling) ---------------- */
+
+export function units() { return state.user?.units || 'metric'; }
+
+export function fmtSplit(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '–:––';
+  const m = Math.floor(seconds / 60);
+  const s = seconds - m * 60;
+  return `${m}:${s.toFixed(1).padStart(4, '0')}`;
+}
+
+export function fmtDuration(totalS) {
+  if (!Number.isFinite(totalS)) return '–';
+  totalS = Math.round(totalS);
+  const h = Math.floor(totalS / 3600), m = Math.floor((totalS % 3600) / 60), s = totalS % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Pace is always /500m (the universal erg convention on both unit systems);
+// long distances and body weight follow the unit toggle.
+export function fmtDistance(m) {
+  if (!Number.isFinite(m)) return '–';
+  if (units() === 'imperial' && m >= 1609) return `${(m / 1609.344).toFixed(2)} mi`;
+  return m >= 10000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`;
+}
+
+export function fmtWeight(kg) {
+  if (!Number.isFinite(kg)) return '–';
+  return units() === 'imperial' ? `${Math.round(kg * 2.20462)} lb` : `${Math.round(kg)} kg`;
+}
+
+export function fmtDate(unixS) {
+  if (!unixS) return '–';
+  return new Date(unixS * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+export function fmtDateTime(unixS) {
+  if (!unixS) return '–';
+  return new Date(unixS * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+export function uuidv4() {
+  return crypto.randomUUID ? crypto.randomUUID() :
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+}
