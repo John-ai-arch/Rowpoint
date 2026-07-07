@@ -12,8 +12,6 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: ROWPOINT_DATA_DIR
-        value: ./data
       # Secrets pinned as env vars so every session and research pseudonym
       # survives even a disk migration — Render generates the values once and
       # keeps them across deploys. (Without these the app persists them to the
