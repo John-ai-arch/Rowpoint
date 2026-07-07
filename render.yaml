@@ -5,7 +5,7 @@ services:
   - type: web
     name: rowpoint
     runtime: node
-    plan: starter          # persistent disks require a paid instance
+    plan: free          # persistent disks require a paid instance
     buildCommand: npm install --omit=dev
     startCommand: node server/index.js
     healthCheckPath: /api/status
@@ -26,7 +26,3 @@ services:
         sync: false        # Render prompts you for this at deploy time
       - key: MAIL_FROM
         value: "RowPoint <onboarding@resend.dev>"
-    disk:
-      name: rowpoint-data
-      mountPath: /var/data
-      sizeGB: 1
