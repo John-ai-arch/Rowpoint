@@ -10,6 +10,14 @@ import { verifyToken } from './util.js';
 
 const STALE_AFTER_MS = 6000;
 
+// Server-initiated pushes (e.g. a chat message created over REST is fanned
+// out to everyone with the group channel open). Wired up by attachRealtime;
+// a no-op before the hub exists (tests that never attach realtime still work).
+let hubBroadcast = null;
+export function publishToChannel(channel, msg) {
+  if (hubBroadcast) hubBroadcast(channel, msg);
+}
+
 export function attachRealtime(httpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
   // channel -> Map<userId, { ws, lastMetrics, lastSeen, role }>
@@ -23,8 +31,12 @@ export function attachRealtime(httpServer) {
 
   function canJoin(user, channel) {
     // team_workout:{assignmentId} → must be team member or its coach.
+    // group:{groupId} → must be a group member (live chat + activity).
     const [kind, key] = channel.split(':');
     if (kind === 'adhoc') return typeof key === 'string' && key.length >= 4 && key.length <= 64;
+    if (kind === 'group') {
+      return !!db.prepare('SELECT id FROM group_members WHERE group_id = ? AND user_id = ?').get(key, user.id);
+    }
     if (kind !== 'team_workout') return false;
     const a = db.prepare('SELECT team_id, coach_id FROM assignments WHERE id = ?').get(key);
     if (!a) return false;
@@ -41,6 +53,7 @@ export function attachRealtime(httpServer) {
       if (entry.ws.readyState === entry.ws.OPEN) entry.ws.send(data);
     }
   }
+  hubBroadcast = broadcast;
 
   function roster(channel) {
     const m = channels.get(channel);

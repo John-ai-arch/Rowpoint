@@ -5,10 +5,15 @@ A full web implementation of the RowPoint specification: BLE erg connectivity
 universal Bluetooth heart-rate-monitor subsystem (any SIG-standard strap:
 Polar/Garmin/Wahoo/Coospo/…, with zones, auto-reconnect, battery, history
 analysis), coach/rower accounts with team codes, live simultaneous team view
-and leaderboards, an opt-out research data program, a deterministic-rules AI
-training assistant with LLM phrasing, daily wellness check-ins, a social
-layer, and a single hard-coded admin account. Installable as an app (PWA);
-see APPSTORE.md for the iOS App Store path and DEPLOY.md for hosting.
+and leaderboards, an opt-out research data program, an LLM-powered AI coach
+that analyzes each athlete's complete training history (volume, zone
+distribution, HR trends, pace progression, recovery, adherence) to generate
+personalized daily recommendations, daily wellness check-ins, a friend/social
+layer, a full **Groups** system (dashboards, ~19 automatic leaderboards,
+challenges, collaborative goals, live chat, achievement badges, roles,
+public/private discovery, and analytics), and role-based admin access with a
+comprehensive dashboard. Installable as an app (PWA); see APPSTORE.md for the
+iOS App Store path and DEPLOY.md for hosting.
 
 ## Run it
 
@@ -24,9 +29,11 @@ shows the 6-digit code right on the verification screen. On a real deployment
 set `RESEND_API_KEY` and codes arrive by email (see DEPLOY.md).
 
 Sign up as a **coach** to get a team code instantly; sign up as a **rower**
-(optionally with that code) in a second browser/incognito window. The **admin
-dashboard** unlocks only for a verified account with the email
-`lambert.venema2027@gmail.com` — enforced server-side on every request.
+(optionally with that code) in a second browser/incognito window. Admin access
+is **role-based** (RBAC, re-checked server-side on every request); the owner
+account `lambert.venema2027@gmail.com` is assigned the Admin role
+automatically the moment it is created and verified, and can grant/revoke the
+role for other accounts from the admin dashboard.
 
 No hardware handy? The Row screen has an erg **Simulator** with pacing
 profiles ("fly & die" demos the started-too-hard AI feedback), and the Heart
@@ -45,12 +52,16 @@ npm test           # unit + API + realtime (node:test)
 npm run test:e2e   # Playwright browser flows (starts its own server)
 ```
 
-Coverage highlights: the spec's §11.2 worked example (6 coach sessions +
-twice-a-day goal → 60–90 min low-intensity steady state), pacing classifier,
-CSAFE framing, verification gating, research opt-out write-time semantics,
-admin access control + audit logging, email-search rate limiting, live
-metric fan-out and presence/staleness over WebSocket, and full coach → rower →
-live session → leaderboard → AI feedback journeys in a real browser.
+Coverage highlights: the training-analysis engine (zone classification from
+real pace/HR data, distribution, recovery spacing, risk flags), the AI coach's
+guardrails (coach assignment always wins; overtraining always yields rest) and
+its property that different histories produce different recommendations,
+pacing classifier, CSAFE framing, verification gating, research opt-out
+write-time semantics + HR-retention consent, RBAC role grant/revoke, admin
+password reset, AI adherence tracking, security event logging, admin access
+control + audit logging, email-search rate limiting, live metric fan-out and
+presence/staleness over WebSocket, and full coach → rower → live session →
+leaderboard → AI feedback journeys in a real browser.
 
 ## Configuration (env vars)
 
@@ -58,8 +69,8 @@ live session → leaderboard → AI feedback journeys in a real browser.
 | --- | --- |
 | `PORT` | HTTP port (default 3000) |
 | `ROWPOINT_DATA_DIR` | Data directory (SQLite DB + generated secrets) |
-| `ANTHROPIC_API_KEY` | Enables LLM phrasing for suggestions/feedback (§11.3). Without it, deterministic templates are used — the app is fully functional either way. |
-| `ANTHROPIC_MODEL` | Default `claude-sonnet-4-6` |
+| `ANTHROPIC_API_KEY` | Enables the LLM coach: Claude reasons over each athlete's full training analysis to write the daily recommendation and post-workout feedback. Without it, the analysis-engine fallback generates recommendations from the same data — the app is fully functional either way. |
+| `ANTHROPIC_MODEL` | Default `claude-opus-4-8` |
 | `GOOGLE_CLIENT_ID` | Enables Google sign-in (ID-token verification) |
 | `APPLE_CLIENT_ID` | Placeholder for Sign in with Apple (needs Apple Developer credentials) |
 | `NODE_ENV=production` | Disables the dev outbox endpoint |
@@ -70,7 +81,8 @@ live session → leaderboard → AI feedback journeys in a real browser.
 - **SQLite instead of Postgres**: `node:sqlite` keeps the system fully self-contained and testable; the schema is plain portable SQL (TEXT ids, unix-int timestamps) designed to move to Postgres unchanged. All queries are prepared statements.
 - **Auth**: scrypt password hashing, HMAC-signed stateless tokens, and STRICT email verification — signup and login issue no session until the code is confirmed (product decision superseding §2.1's local-use allowance). Google sign-in uses the real Google Identity Services flow when `GOOGLE_CLIENT_ID` is set and verifies ID tokens server-side; Apple returns a clear 501 until Apple Developer credentials exist (endpoints + account-linking in place, per §10.1's "build both at once").
 - **Heart-rate subsystem**: `public/js/ble/sensors.js` is the platform abstraction (`HeartRateManager` + monitor classes) — full SIG HRM packet decoding (8/16-bit BPM, RR intervals, energy expended), battery + device-info services, known-device memory (rename/forget/prefer), exponential-backoff auto-reconnect at launch/workout-start/signal-loss, 5-second rolling smoothing, and configurable zones (custom max HR or 220−age). Per-workout HR time series are stored server-side (`hr_series_json`) with zone-seconds and HR-drift summaries computed at sync time. Web Bluetooth's chooser is the scan surface (filtered to HR-service devices only); native builds implement true scan lists on the same interface.
-- **Admin**: the owner email is a hard-coded constant in `server/config.js`, re-checked server-side on **every** admin request (`adminRequired`); there is no `is_admin` column anywhere. All six §3.2 capabilities are built, and every admin action writes to `audit_log`.
+- **AI coach**: `server/ai/trainingAnalysis.js` deterministically distills the athlete's complete history — weekly/monthly volume, UT2→sprint zone distribution (pace-vs-2k bands with HR fallback), structure mix, HR drift and aerobic-efficiency trends, pace progression, recovery spacing, PRs, wellness, adherence to prior recommendations, and risk flags. `server/ai/coach.js` sends that analysis to Claude (structured JSON output: workout, explanation, why-appropriate, physiological target, expected adaptations, recovery advice, confidence, alternative), validates the returned plan against the same monitor limits the builder uses, and enforces two code-level guardrails regardless of model output: a coach assignment for today always wins, and detected overtraining always yields rest. Without an API key, an analysis-engine fallback reasons over the same data (labeled distinctly in the UI — engine output is never presented as LLM output). Adherence is tracked per recommendation and rolled up in admin AI analytics.
+- **Admin**: role-based access control (`users.role`, re-read server-side on **every** admin request via `adminRequired`); the owner email in `server/config.js` is auto-assigned the Admin role at creation/verification and can never be demoted or locked out. The dashboard covers user/workout/research/AI statistics, user management (roles, password reset, research grant/revoke, workout history, feedback), system health (uptime, DB, storage, API usage), security (auth event log, failed logins), data management (CSV/JSON/SQL exports, DB backup), moderation, and broadcast — and every admin action writes to `audit_log`.
 - **Research opt-out policy** (§5.1 asked us to pick one and state it): past contributions are **retained** on opt-out, future contribution stops immediately (checked at write time); **account deletion removes research rows entirely**. This is stated verbatim in the signup consent screen and Settings. Research rows are keyed by an HMAC-derived pseudonymous ID under a secret separate from the token secret, with coarsened demographics (birth decade, not year).
 - **Study tagging**: one row per active study tag (row-per-study rather than tables-per-study), so the admin dashboard filters per experiment as §5.2 suggests.
 - **Coach vs. AI**: suggestions are delivered to rowers immediately but surface on the coach's team page the same day with approve/override; an override replaces the AI text with the coach's note. A coach assignment scheduled today always preempts any suggestion (§11.5).
@@ -92,9 +104,13 @@ native apps ship.
 ## Layout
 
 ```
-server/            Express API, SQLite schema, auth, teams, workouts,
-                   wellness, social, research pipeline, admin, WebSocket hub
-server/ai/         rules engine · pacing classifier · plan validation · LLM phrasing
+server/            Express API, SQLite schema, auth (RBAC), teams, workouts,
+                   wellness, social, groups, research pipeline, admin, metrics,
+                   WebSocket hub
+server/ai/         training analysis engine · LLM coach (+ analysis-engine
+                   fallback) · pacing classifier · plan validation
+server/groups.js   group dashboards, leaderboards, challenges, goals, chat,
+                   achievements, discovery, analytics + workout-sync hooks
 public/            SPA (no build step): pages, BLE adapters, charts, offline queue
 tests/             unit + API + realtime (node:test), e2e/ (Playwright)
 ```

@@ -308,32 +308,20 @@ test('research: opt-in contributes pseudonymously; opt-out stops future contribu
 
 /* ---------------- social (§4, §14 rate limiting) ---------------- */
 
-test('social: exact-email search, connect, group of mutually-connected users, feed', async () => {
+test('social: exact-email search, connect/accept, report feeds moderation', async () => {
   const s = await req(`/social/search?email=${encodeURIComponent('rower2@test.com')}`, { token: rower.token });
   assert.equal(s.body.found, true);
-  // request + accept
+  // request + accept a friend connection
   await req('/social/connections/request', { method: 'POST', body: { userId: rower2.user.id }, token: rower.token });
   const conns = await req('/social/connections', { token: rower2.token });
   const incoming = conns.body.incoming[0];
+  assert.ok(incoming, 'the request arrived');
   await req(`/social/connections/${incoming.connectionId}/respond`, { method: 'POST', body: { accept: true }, token: rower2.token });
+  const accepted = await req('/social/connections', { token: rower.token });
+  assert.ok(accepted.body.connections.some(c => c.id === rower2.user.id), 'now connected');
 
-  // group can only contain mutually-connected accounts
-  const badGroup = await req('/social/groups', { method: 'POST', body: { name: 'Nope', memberIds: [coach.user.id] }, token: rower.token });
-  assert.equal(badGroup.status, 400);
-  const g = await req('/social/groups', { method: 'POST', body: { name: 'Erg buddies', memberIds: [rower2.user.id] }, token: rower.token });
-  assert.equal(g.status, 201);
-
-  // completing a workout feeds the group (rower shares workouts)
-  await req('/workouts/sync', { method: 'POST', body: workoutBody([123, 123, 123]), token: rower.token });
-  const detail = await req(`/social/groups/${g.body.groupId}`, { token: rower2.token });
-  assert.ok(detail.body.feed.some(f => f.type === 'workout_completed'));
-  assert.ok(detail.body.members.length === 2);
-  // rower shares 2k history → visible; group member list respects settings
-  const ann = detail.body.members.find(m => m.displayName === 'Ann Rower');
-  assert.ok(ann.best2kSeconds > 0);
-
-  // report feeds moderation
-  await req('/social/report', { method: 'POST', body: { userId: rower.user.id, groupId: g.body.groupId, reason: 'spam', details: 'test report' }, token: rower2.token });
+  // report feeds admin moderation
+  await req('/social/report', { method: 'POST', body: { userId: rower.user.id, reason: 'spam', details: 'test report' }, token: rower2.token });
 });
 
 test('email search is rate-limited against enumeration (§14)', async () => {
@@ -632,6 +620,301 @@ test('malformed HR series are sanitized, never crash sync', async () => {
   assert.equal(s.status, 201);
   const d = await req(`/workouts/${body.id}`, { token: rower.token });
   assert.deepEqual(d.body.workout.hrSeries, [[1, 130], [3, 128]]);
+});
+
+test('HR retention follows research consent: opted-out users keep summary only, no raw series', async () => {
+  const hrSeries = [];
+  for (let t = 0; t < 60; t++) hrSeries.push([t, 150]);
+
+  // opted out → summary statistics stored, raw series discarded
+  await req('/users/me', { method: 'PATCH', body: { researchOptIn: false }, token: rower2.token });
+  const minimal = workoutBody([131, 131, 131], { hrSeries });
+  assert.equal((await req('/workouts/sync', { method: 'POST', body: minimal, token: rower2.token })).status, 201);
+  const d1 = await req(`/workouts/${minimal.id}`, { token: rower2.token });
+  assert.deepEqual(d1.body.workout.hrSeries, [], 'raw series not retained without research consent');
+  assert.equal(d1.body.workout.avg_heart_rate, 150, 'summary avg still available for their own history');
+  assert.equal(d1.body.workout.max_heart_rate, 150);
+  assert.equal(d1.body.workout.hrZones.zoneSeconds.length, 5, 'zone summary still available');
+
+  // opted in → the full series is kept with the workout
+  await req('/users/me', { method: 'PATCH', body: { researchOptIn: true }, token: rower2.token });
+  const full = workoutBody([131.5, 131.5, 131.5], { hrSeries });
+  assert.equal((await req('/workouts/sync', { method: 'POST', body: full, token: rower2.token })).status, 201);
+  const d2 = await req(`/workouts/${full.id}`, { token: rower2.token });
+  assert.equal(d2.body.workout.hrSeries.length, 60, 'full series retained with consent');
+});
+
+/* ---------------- groups: dashboard, leaderboards, challenges, goals, chat ---------------- */
+
+let groupId;
+
+test('groups: create with privacy, invite-code join, dashboard, non-member blocked', async () => {
+  const created = await req('/groups', {
+    method: 'POST', token: rower.token,
+    body: { name: 'Erg Legends', description: 'Test crew', privacy: 'private', city: 'Boston', country: 'USA' },
+  });
+  assert.equal(created.status, 201);
+  groupId = created.body.groupId;
+
+  const dash = await req(`/groups/${groupId}`, { token: rower.token });
+  assert.equal(dash.body.myRole, 'owner');
+  assert.ok(dash.body.group.inviteCode.startsWith('G'));
+  assert.equal(dash.body.group.privacy, 'private');
+  assert.equal(dash.body.group.memberCount, 1);
+
+  // outsider cannot see anything, and cannot join a private group directly
+  assert.equal((await req(`/groups/${groupId}`, { token: rower2.token })).status, 403);
+  assert.equal((await req(`/groups/${groupId}/join`, { method: 'POST', token: rower2.token })).status, 403);
+
+  // invite code joins instantly and lands in the feed
+  const join = await req('/groups/join-by-code', { method: 'POST', body: { code: dash.body.group.inviteCode }, token: rower2.token });
+  assert.equal(join.status, 200);
+  const dash2 = await req(`/groups/${groupId}`, { token: rower2.token });
+  assert.equal(dash2.body.group.memberCount, 2);
+  assert.ok(dash2.body.feed.some(f => f.type === 'joined'));
+  assert.ok(dash2.body.stats.totalMeters > 0, 'group totals aggregate member workouts');
+});
+
+test('groups: join-request flow for private groups (approval by staff)', async () => {
+  const r = await req(`/groups/${groupId}/join-request`, { method: 'POST', body: { message: 'Coach here!' }, token: coach.token });
+  assert.equal(r.status, 201);
+  assert.equal(r.body.joined, false);
+  const list = await req(`/groups/${groupId}/join-requests`, { token: rower.token });
+  const mine = list.body.requests.find(x => x.userId === coach.user.id);
+  assert.ok(mine, 'owner sees the pending request');
+  // members can't review requests
+  assert.equal((await req(`/groups/${groupId}/join-requests`, { token: rower2.token })).status, 403);
+  await req(`/groups/${groupId}/join-requests/${mine.id}`, { method: 'POST', body: { approve: true }, token: rower.token });
+  assert.equal((await req(`/groups/${groupId}`, { token: coach.token })).status, 200, 'approved requester is a member');
+});
+
+test('groups: leaderboards rank real training data across kinds', async () => {
+  // rower2 turned team sharing off in the earlier teams-privacy test —
+  // re-enable so both athletes appear on the boards.
+  await req('/users/me', { method: 'PATCH', body: { shareWorkoutsTeam: true } , token: rower2.token });
+  const meters = await req(`/groups/${groupId}/leaderboard/total_meters`, { token: rower.token });
+  assert.ok(meters.body.entries.length >= 2);
+  assert.equal(meters.body.entries[0].rank, 1);
+  assert.ok(meters.body.entries[0].meters >= meters.body.entries[1].meters, 'sorted by meters');
+
+  const weekly = await req(`/groups/${groupId}/leaderboard/weekly_meters`, { token: rower.token });
+  assert.ok(weekly.body.entries.length >= 1, 'this week has meters');
+
+  const twoK = await req(`/groups/${groupId}/leaderboard/best_2k?range=all`, { token: rower.token });
+  const ann = twoK.body.entries.find(e => e.userId === rower.user.id);
+  assert.ok(ann, 'Ann logged a real 2k');
+  assert.match(ann.timeText, /^\d+:\d{2}\.\d$/);
+  assert.ok(ann.avgSplitText);
+
+  const streak = await req(`/groups/${groupId}/leaderboard/current_streak`, { token: rower.token });
+  assert.ok(streak.body.entries.some(e => e.days >= 1), 'today counts toward a streak');
+
+  const consistent = await req(`/groups/${groupId}/leaderboard/most_consistent`, { token: rower.token });
+  assert.ok(consistent.body.entries.every(e => e.consistencyPct >= 0 && e.consistencyPct <= 100));
+
+  assert.equal((await req(`/groups/${groupId}/leaderboard/nonsense`, { token: rower.token })).status, 400);
+
+  // privacy: a member who stops sharing workouts disappears from volume boards
+  await req('/users/me', { method: 'PATCH', body: { shareWorkoutsTeam: false }, token: rower2.token });
+  const metersAfter = await req(`/groups/${groupId}/leaderboard/total_meters`, { token: rower.token });
+  assert.ok(!metersAfter.body.entries.some(e => e.userId === rower2.user.id), 'privacy respected on leaderboards');
+  await req('/users/me', { method: 'PATCH', body: { shareWorkoutsTeam: true }, token: rower2.token });
+});
+
+test('groups: feed likes and comments', async () => {
+  const { body: fb } = await req(`/groups/${groupId}/feed`, { token: rower.token });
+  const item = fb.feed[0];
+  const like = await req(`/groups/${groupId}/feed/${item.id}/like`, { method: 'POST', token: rower2.token });
+  assert.equal(like.body.liked, true);
+  assert.equal(like.body.likes, 1);
+  await req(`/groups/${groupId}/feed/${item.id}/comments`, { method: 'POST', body: { body: 'Huge session! 🔥' }, token: rower2.token });
+  const { body: cb } = await req(`/groups/${groupId}/feed/${item.id}/comments`, { token: rower.token });
+  assert.equal(cb.comments.length, 1);
+  assert.equal(cb.comments[0].body, 'Huge session! 🔥');
+});
+
+test('groups: challenges — permissions, live standings, finalize with winners + badge', async () => {
+  // regular members cannot create challenges
+  assert.equal((await req(`/groups/${groupId}/challenges`, {
+    method: 'POST', body: { name: 'Nope', metric: 'meters' }, token: rower2.token,
+  })).status, 403);
+
+  // a live challenge with standings — only training done DURING the window counts
+  const live = await req(`/groups/${groupId}/challenges`, {
+    method: 'POST', token: rower.token,
+    body: { name: 'Meter Monsters', metric: 'meters', endsAt: Math.floor(Date.now() / 1000) + 7 * 86400 },
+  });
+  assert.equal(live.status, 201);
+  await req('/workouts/sync', {
+    method: 'POST', token: rower2.token,
+    body: workoutBody([134, 134, 134], { startedAt: Math.floor(Date.now() / 1000) }),
+  });
+
+  // an already-elapsed challenge finalizes on read: winners + feed + badge
+  const t = Math.floor(Date.now() / 1000);
+  await req(`/groups/${groupId}/challenges`, {
+    method: 'POST', token: rower.token,
+    body: { name: 'Yesterday Sprint', metric: 'meters', startsAt: t - 2 * 86400, endsAt: t - 60 },
+  });
+  const { body } = await req(`/groups/${groupId}/challenges`, { token: rower2.token });
+  const liveC = body.challenges.find(c => c.name === 'Meter Monsters');
+  assert.equal(liveC.status, 'active');
+  assert.ok(liveC.standings.length >= 1, 'live standings computed');
+  const done = body.challenges.find(c => c.name === 'Yesterday Sprint');
+  assert.equal(done.status, 'finished');
+  assert.ok(done.winners.length >= 1, 'winners recorded');
+  const winnerBadges = await req('/groups/badges/me', { token: rower.token });
+  const rower2Badges = await req('/groups/badges/me', { token: rower2.token });
+  const allBadges = [...winnerBadges.body.badges, ...rower2Badges.body.badges].map(b => b.badge);
+  assert.ok(allBadges.includes('challenge_winner'), 'challenge winner got the badge');
+});
+
+test('groups: collaborative goals track progress and complete on sync', async () => {
+  const g = await req(`/groups/${groupId}/goals`, {
+    method: 'POST', token: rower.token,
+    body: { name: 'Row 3k together', metric: 'meters', target: 3000 },
+  });
+  assert.equal(g.status, 201);
+  // a fresh workout pushes the group over the target → completion detected
+  await req('/workouts/sync', { method: 'POST', body: workoutBody([133, 133, 133, 133, 133, 133, 133]), token: rower2.token });
+  const { body } = await req(`/groups/${groupId}/goals`, { token: rower.token });
+  const goal = body.goals.find(x => x.name === 'Row 3k together');
+  assert.equal(goal.progressPct, 100);
+  assert.ok(goal.completedAt, 'goal marked completed by the sync hook');
+  const { body: fb } = await req(`/groups/${groupId}/feed`, { token: rower.token });
+  assert.ok(fb.feed.some(f => f.type === 'goal_completed'));
+});
+
+test('groups: chat — messages, reactions, pinning, announcements, deletion permissions', async () => {
+  const m1 = await req(`/groups/${groupId}/messages`, { method: 'POST', body: { body: 'Morning erg at 6?' }, token: rower2.token });
+  assert.equal(m1.status, 201);
+  // members cannot post announcements…
+  assert.equal((await req(`/groups/${groupId}/messages`, {
+    method: 'POST', body: { kind: 'announcement', body: 'fake' }, token: rower2.token,
+  })).status, 403);
+  // …but staff can, and the group gets notified
+  const ann = await req(`/groups/${groupId}/messages`, {
+    method: 'POST', body: { kind: 'announcement', body: 'Regatta entries close Friday!' }, token: rower.token,
+  });
+  assert.equal(ann.status, 201);
+  const notifs = await req('/users/me/notifications', { token: rower2.token });
+  assert.ok(notifs.body.notifications.some(n => n.title === 'Group announcement'));
+
+  // reactions toggle
+  const react = await req(`/groups/${groupId}/messages/${m1.body.message.id}/react`, { method: 'POST', body: { emoji: '🔥' }, token: rower.token });
+  assert.equal(react.body.reacted, true);
+
+  // pinning is staff-only
+  assert.equal((await req(`/groups/${groupId}/messages/${ann.body.message.id}/pin`, { method: 'POST', token: rower2.token })).status, 403);
+  await req(`/groups/${groupId}/messages/${ann.body.message.id}/pin`, { method: 'POST', token: rower.token });
+
+  // members can't delete others' messages; authors can delete their own
+  assert.equal((await req(`/groups/${groupId}/messages/${ann.body.message.id}`, { method: 'DELETE', token: rower2.token })).status, 403);
+  assert.equal((await req(`/groups/${groupId}/messages/${m1.body.message.id}`, { method: 'DELETE', token: rower2.token })).status, 200);
+
+  const list = await req(`/groups/${groupId}/messages`, { token: rower.token });
+  assert.ok(list.body.pinned.length >= 1, 'pinned message surfaced');
+  const deleted = list.body.messages.find(m => m.id === m1.body.message.id);
+  assert.equal(deleted.deleted, true);
+  assert.equal(deleted.body, null, 'deleted message content is gone');
+});
+
+test('groups: roles, member management, achievements on profiles, analytics', async () => {
+  // promote rower2 to moderator → they can now create a challenge
+  await req(`/groups/${groupId}/members/${rower2.user.id}/role`, { method: 'POST', body: { role: 'moderator' }, token: rower.token });
+  assert.equal((await req(`/groups/${groupId}/challenges`, {
+    method: 'POST', body: { name: 'Mod challenge', metric: 'workouts' }, token: rower2.token,
+  })).status, 201);
+
+  const members = await req(`/groups/${groupId}/members`, { token: rower2.token });
+  const ann = members.body.members.find(m => m.id === rower.user.id);
+  assert.equal(ann.role, 'owner');
+  assert.ok(ann.badges.some(b => b.badge === 'first_workout'), 'badges appear on member profiles');
+  assert.ok(ann.badges.some(b => b.badge === 'first_2k'));
+  assert.ok(ann.badges.some(b => b.badge === 'pb_2k'));
+
+  // owner cannot leave while others remain
+  assert.equal((await req(`/groups/${groupId}/leave`, { method: 'POST', token: rower.token })).status, 400);
+
+  const analytics = await req(`/groups/${groupId}/analytics`, { token: rower.token });
+  const a = analytics.body.analytics;
+  assert.ok(a.totalMeters > 0);
+  assert.ok(a.activeMembers7d >= 1);
+  assert.ok(Array.isArray(a.heatmap) && a.heatmap.length >= 1);
+  assert.equal(a.growth.length, 8);
+});
+
+test('groups: discovery finds public groups; direct join works', async () => {
+  const pub = await req('/groups', {
+    method: 'POST', token: coach.token,
+    body: { name: 'Open Water Collective', privacy: 'public', school: 'State University', city: 'Seattle', country: 'USA' },
+  });
+  const found = await req('/groups/discover?q=open%20water', { token: rower.token });
+  const hit = found.body.groups.find(g => g.id === pub.body.groupId);
+  assert.ok(hit, 'public group discoverable by name');
+  assert.equal(hit.privacy, 'public');
+  const bySchool = await req('/groups/discover?school=state%20university', { token: rower.token });
+  assert.ok(bySchool.body.groups.some(g => g.id === pub.body.groupId), 'discoverable by school');
+  const join = await req(`/groups/${pub.body.groupId}/join`, { method: 'POST', token: rower.token });
+  assert.equal(join.status, 200);
+  assert.equal((await req(`/groups/${pub.body.groupId}`, { token: rower.token })).body.group.memberCount, 2);
+});
+
+/* ---------------- account persistence & duplicate prevention ---------------- */
+
+test('accounts persist: log out, log back in, same account, history intact, duplicate signup rejected', async () => {
+  const persist = await makeUser('persist@test.com', 'rower', { displayName: 'Perry' });
+  const w = workoutBody([132, 132, 132]);
+  await req('/workouts/sync', { method: 'POST', body: w, token: persist.token });
+
+  // "Log out" (client discards the token) and sign back in days later —
+  // same credentials must return the SAME account, not a new one.
+  const login = await req('/auth/login', { method: 'POST', body: { email: 'persist@test.com', password: 'password123' } });
+  assert.equal(login.status, 200);
+  assert.ok(login.body.token, 'login issues a session');
+  assert.equal(login.body.user.id, persist.user.id, 'login retrieves the ORIGINAL account');
+
+  // the old token also still works (sessions survive until their TTL)
+  assert.equal((await req('/auth/me', { token: persist.token })).status, 200);
+
+  // all previous data is still attached to the account
+  const hist = await req('/workouts/', { token: login.body.token });
+  assert.ok(hist.body.workouts.some(x => x.id === w.id), 'workout history intact after re-login');
+
+  // registering again with the same email is rejected and points to sign-in
+  const dup = await req('/auth/signup', {
+    method: 'POST',
+    body: { email: 'persist@test.com', password: 'different123', displayName: 'Imposter', accountType: 'rower' },
+  });
+  assert.equal(dup.status, 409);
+  assert.equal(dup.body.error, 'email_taken');
+  assert.match(dup.body.message, /sign in/i);
+  // and email match is case-insensitive at the API boundary (lowercased)
+  const dup2 = await req('/auth/signup', {
+    method: 'POST',
+    body: { email: 'PERSIST@TEST.COM', password: 'different123', displayName: 'Imposter', accountType: 'rower' },
+  });
+  assert.equal(dup2.status, 409);
+});
+
+test('duplicate signup race: simultaneous registrations for one email create exactly one account', async () => {
+  const body = (n) => ({ email: 'race@test.com', password: 'password123', displayName: `Racer${n}`, accountType: 'rower' });
+  const results = await Promise.all([1, 2, 3, 4].map(n =>
+    req('/auth/signup', { method: 'POST', body: body(n) })));
+  const created = results.filter(r => r.status === 201);
+  const rejected = results.filter(r => r.status === 409);
+  assert.equal(created.length, 1, 'exactly one signup wins the race');
+  assert.equal(rejected.length, 3, 'the rest get a clean 409, never a 500');
+  for (const r of rejected) assert.equal(r.body.error, 'email_taken');
+});
+
+test('/admin/system reports storage persistence facts (instance id, boot count)', async () => {
+  const { body } = await req('/admin/system', { token: admin.token });
+  const p = body.system.database.persistence;
+  assert.ok(p.instanceId, 'database has a stable instance id');
+  assert.ok(p.bootCount >= 1);
+  assert.ok(p.userCount >= 5);
+  assert.equal(typeof p.dbExistedAtBoot, 'boolean');
 });
 
 test('daily suggested workouts have stable shareable ids (§7)', async () => {

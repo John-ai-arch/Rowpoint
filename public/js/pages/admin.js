@@ -322,6 +322,13 @@ export async function renderAdmin(el) {
           </tbody></table></div>
         <div class="card tight"><h3>Database</h3>
           <p class="small muted">${esc(d.file)} · ${mb(d.sizeBytes)} + WAL ${mb(d.walSizeBytes)} · journal ${esc(String(dbs.journalMode))} · quick_check: ${esc(String(d.quickCheck))}</p>
+          ${d.persistence ? `<p class="small ${d.persistence.dataDirConfigured ? '' : 'muted'}">
+            Storage: <code>${esc(d.persistence.dataDir)}</code> ·
+            db created ${fmtDateTime(d.persistence.dbCreatedAt)} · boot #${d.persistence.bootCount} ·
+            instance <code>${esc((d.persistence.instanceId || '').slice(0, 8))}</code>
+            ${!d.persistence.dataDirConfigured ? '<br><span class="badge red">ROWPOINT_DATA_DIR not set — accounts will be LOST on redeploy (see DEPLOY.md)</span>' : ''}
+            ${!d.persistence.tokenSecretFromEnv ? '<br><span class="badge amber">token secret on disk only — set ROWPOINT_TOKEN_SECRET to survive disk migrations</span>' : ''}
+          </p>` : ''}
           <table><thead><tr><th>Table</th><th>Rows</th></tr></thead><tbody>
           ${d.tableCounts.map(t => `<tr><td><code>${esc(t.table)}</code></td><td>${t.rows}</td></tr>`).join('')}
           </tbody></table>

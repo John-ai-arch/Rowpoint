@@ -14,6 +14,14 @@ services:
         value: production
       - key: ROWPOINT_DATA_DIR
         value: /var/data
+      # Secrets pinned as env vars so every session and research pseudonym
+      # survives even a disk migration — Render generates the values once and
+      # keeps them across deploys. (Without these the app persists them to the
+      # data disk, which also works as long as the disk itself persists.)
+      - key: ROWPOINT_TOKEN_SECRET
+        generateValue: true
+      - key: ROWPOINT_RESEARCH_SECRET
+        generateValue: true
       - key: RESEND_API_KEY
         sync: false        # Render prompts you for this at deploy time
       - key: MAIL_FROM

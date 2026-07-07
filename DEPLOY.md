@@ -8,6 +8,24 @@ Users need ZERO setup: they open your URL, sign up, verify the code that
 arrives in their email, and everything works — including "Add to Home
 Screen" to install RowPoint like a native app.
 
+## Non-negotiable: a persistent data directory
+
+**Accounts live in one SQLite file in `ROWPOINT_DATA_DIR`. If that directory
+is not on a persistent disk, every redeploy silently deletes every user
+account and signs everyone out** — the classic symptom is "I had to create my
+account again, and it let me reuse the same email". All three deploy options
+below mount a persistent disk; do not skip that step. The server refuses to
+suffer this silently: in production it logs a loud error when
+`ROWPOINT_DATA_DIR` is unset and a warning when it finds a brand-new database,
+and the admin System tab shows the database instance id, creation date, and
+boot count so you can verify persistence at a glance (if the instance id
+changes between deploys, your disk is not persistent).
+
+Belt-and-braces: also set `ROWPOINT_TOKEN_SECRET` and
+`ROWPOINT_RESEARCH_SECRET` to long random strings in your host's environment
+variables (the Render blueprint generates them for you). Then sessions and
+research pseudonyms survive even a disk migration.
+
 ## The one thing you must configure: email
 
 Verification codes must reach real inboxes. Sign up at **resend.com** (free:
@@ -22,7 +40,8 @@ on-screen — fine for local testing, wrong for a public site.
 2. railway.com → New Project → Deploy from GitHub repo.
 3. Right-click the service → **Attach Volume**, mount path `/data`.
 4. Variables tab: `ROWPOINT_DATA_DIR=/data`, `NODE_ENV=production`,
-   `RESEND_API_KEY=re_…`.
+   `RESEND_API_KEY=re_…`, plus `ROWPOINT_TOKEN_SECRET` and
+   `ROWPOINT_RESEARCH_SECRET` set to long random strings.
 5. Settings → Networking → **Generate Domain**. Done — that URL is your app.
 
 ## Option B — Render (blueprint, near-zero clicks)
@@ -47,6 +66,8 @@ Put Caddy or nginx in front for HTTPS (Caddyfile: `yourdomain.com { reverse_prox
 3. Sign in as `lambert.venema2027@gmail.com` (verified) → Admin dashboard appears.
 4. Back up the SQLite file (`rowpoint.db` in the data dir) on a schedule.
 
-Optional variables: `ANTHROPIC_API_KEY` (nicer AI phrasing), `GOOGLE_CLIENT_ID`
-(enables the Google sign-in button — see README), `MAIL_FROM` (your own
-verified sender domain in Resend).
+Optional variables: `ANTHROPIC_API_KEY` (enables the LLM coach — Claude
+reasons over each athlete's training history for daily recommendations;
+without it a data-driven fallback engine runs), `GOOGLE_CLIENT_ID` (enables
+the Google sign-in button — see README), `MAIL_FROM` (your own verified
+sender domain in Resend).

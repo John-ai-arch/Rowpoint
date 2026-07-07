@@ -144,12 +144,12 @@ test('rower does the daily wellness check-in and sees trends', async () => {
   await page.close();
 });
 
-test('AI suggestion appears on the dashboard with disclosure and rationale', async () => {
+test('AI coach recommendation appears on the dashboard with disclosure and category', async () => {
   const page = await rowerCtx.newPage();
   await page.goto(`${BASE}/#/`);
-  await expect(page.getByText("Today's suggestion")).toBeVisible();
-  await expect(page.getByText('AI-generated').first()).toBeVisible(); // §11.5 disclosure
-  await expect(page.locator('code').first()).toBeVisible();           // rationale tag shown
+  await expect(page.getByText("Today's coach recommendation")).toBeVisible();
+  await expect(page.getByText('AI-generated').first()).toBeVisible(); // machine-generated disclosure
+  await expect(page.locator('code').first()).toBeVisible();           // recommendation category shown
   await page.screenshot({ path: 'shots/07-dashboard.png', fullPage: true });
   await page.close();
 });
@@ -184,7 +184,7 @@ test('admin dashboard: owner email gets stats, others are blocked', async ({ bro
   // a normal account is blocked from the admin page
   const rowerPage = await rowerCtx.newPage();
   await rowerPage.goto(`${BASE}/#/admin`);
-  await expect(rowerPage.getByText('restricted to the app owner')).toBeVisible();
+  await expect(rowerPage.getByText('Admin access requires the Admin role')).toBeVisible();
   await rowerPage.close();
   await ctx.close();
 });

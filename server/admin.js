@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { Router } from 'express';
-import { db } from './db.js';
+import { db, dbPersistenceInfo } from './db.js';
 import { config } from './config.js';
 import { authRequired, adminRequired, audit, recordAuthEvent } from './middleware.js';
 import { metricsSnapshot } from './metrics.js';
@@ -392,6 +392,11 @@ adminRouter.get('/system', (req, res) => {
         walSizeBytes: walBytes,
         totalStorageBytes: dbBytes + walBytes,
         tableCounts,
+        // Storage-persistence proof: instanceId and dbCreatedAt survive
+        // restarts only if the data directory does. A low bootCount with a
+        // recent dbCreatedAt on a long-running deployment means accounts are
+        // being wiped on redeploys — the ephemeral-disk misconfiguration.
+        persistence: dbPersistenceInfo(),
       },
       auth: {
         status: 'ok',

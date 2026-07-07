@@ -96,27 +96,38 @@ authRouter.post('/signup', rateLimit('signup', 20, 60 * 60 * 1000), (req, res) =
   if (!['coach', 'rower'].includes(b.accountType)) throw badRequest('Account type must be coach or rower.');
   if (b.goalType && !GOAL_TYPES.includes(b.goalType)) throw badRequest('Unknown goal type.');
   if (db.prepare('SELECT id FROM users WHERE email = ?').get(email)) {
-    throw new ApiError(409, 'An account with this email already exists.', 'email_taken');
+    throw new ApiError(409, 'An account with this email already exists. Sign in instead — your workouts and profile are waiting.', 'email_taken');
   }
 
   const id = uuid();
-  db.prepare(`INSERT INTO users (
-      id, email, password_hash, display_name, account_type, birth_year, weight_kg,
-      weight_class, best_2k_seconds, units, goal_type, goal_target_event,
-      goal_target_date, goal_weekly_sessions, goal_weekly_minutes,
-      research_opt_in, created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(
-      id, email, hashPassword(String(b.password)), String(b.displayName).slice(0, 80),
-      b.accountType, clampInt(b.birthYear, 1900, 2100), b.weightKg ?? null,
-      b.weightClass ?? null, b.best2kSeconds ?? null,
-      b.units === 'imperial' ? 'imperial' : 'metric',
-      b.goalType ?? null, b.goalTargetEvent ?? null, b.goalTargetDate ?? null,
-      clampInt(b.goalWeeklySessions, 0, 28), clampInt(b.goalWeeklyMinutes, 0, 4000),
-      // §5.1: research contribution is opt-OUT, presented plainly at signup.
-      b.researchOptIn === false ? 0 : 1,
-      now(),
-    );
+  try {
+    db.prepare(`INSERT INTO users (
+        id, email, password_hash, display_name, account_type, birth_year, weight_kg,
+        weight_class, best_2k_seconds, units, goal_type, goal_target_event,
+        goal_target_date, goal_weekly_sessions, goal_weekly_minutes,
+        research_opt_in, created_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(
+        id, email, hashPassword(String(b.password)), String(b.displayName).slice(0, 80),
+        b.accountType, clampInt(b.birthYear, 1900, 2100), b.weightKg ?? null,
+        b.weightClass ?? null, b.best2kSeconds ?? null,
+        b.units === 'imperial' ? 'imperial' : 'metric',
+        b.goalType ?? null, b.goalTargetEvent ?? null, b.goalTargetDate ?? null,
+        clampInt(b.goalWeeklySessions, 0, 28), clampInt(b.goalWeeklyMinutes, 0, 4000),
+        // §5.1: research contribution is opt-OUT, presented plainly at signup.
+        b.researchOptIn === false ? 0 : 1,
+        now(),
+      );
+  } catch (e) {
+    // Race-safe duplicate prevention: two simultaneous signups for the same
+    // email both pass the pre-check above, but the UNIQUE(email) constraint
+    // makes exactly one INSERT win — surface the loser as the same clean 409
+    // instead of a masked 500.
+    if (/UNIQUE constraint failed.*users\.email/i.test(String(e.message))) {
+      throw new ApiError(409, 'An account with this email already exists. Sign in instead — your workouts and profile are waiting.', 'email_taken');
+    }
+    throw e;
+  }
 
   promoteOwner(id, email);
   recordAuthEvent('signup', { email, userId: id });

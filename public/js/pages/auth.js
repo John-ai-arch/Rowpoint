@@ -224,7 +224,18 @@ export async function renderAuth(el) {
         });
         if (res.joinedTeam) toast(`You'll join ${res.joinedTeam.name} once verified.`, 'success');
         showVerify(res.email, res.devCode);
-      } catch (e) { toast(e.message, 'error'); }
+      } catch (e) {
+        if (e.code === 'email_taken') {
+          // The account already exists — never create a duplicate. Send the
+          // user to sign in with their email prefilled instead.
+          mode = 'login'; step = 1; draw();
+          toast('That email already has a RowPoint account — sign in below to get back to your workouts.', 'info', 7000);
+          const emailInput = el.querySelector('#email');
+          if (emailInput) { emailInput.value = data.email; el.querySelector('#password')?.focus(); }
+          return;
+        }
+        toast(e.message, 'error');
+      }
     });
   }
 

@@ -9,6 +9,7 @@ import { uuid, now, badRequest, ApiError, safeJson, clampNum, fmtSplit, todayStr
 import { classifyPacing, classifyIntervals } from './ai/pacing.js';
 import { phraseFeedback } from './ai/coach.js';
 import { markSuggestionFollowed } from './aiRouter.js';
+import { onWorkoutSynced } from './groups.js';
 import { contributeWorkout } from './research.js';
 import { validatePlan } from './ai/planValidation.js';
 import { sanitizeHrSeries, hrSummary, effectiveMaxHr } from './hr.js';
@@ -63,6 +64,12 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
   // history, and summaries stay synchronized with the same session.
   const hrSeries = sanitizeHrSeries(b.hrSeries);
   const hr = hrSummary(hrSeries, effectiveMaxHr(req.user));
+  // HR retention follows research consent: participants keep the full
+  // timestamped sample series (it powers their per-workout HR chart, research
+  // contributions, and the AI coach's HR analyses); non-participants keep
+  // only the minimum their own history needs — the summary statistics
+  // (avg/max/min, time-in-zone, drift) — and the raw series is discarded.
+  const storeFullHrSeries = !!req.user.research_opt_in;
 
   db.prepare(`INSERT INTO workouts (
       id, user_id, assignment_id, assigned_by_coach_id, started_at, ended_at,
@@ -168,8 +175,12 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
   /* ---- AI recommendation adherence tracking ---- */
   markSuggestionFollowed(req.user.id, startedAt);
 
+  /* ---- groups: achievements, milestones, leaderboard notifications, goals ---- */
+  const savedWorkout = db.prepare('SELECT * FROM workouts WHERE id = ?').get(b.id);
+  onWorkoutSynced(req.user, savedWorkout, { newPb });
+
   /* ---- research contribution (§5.2, write-time opt-in check) ---- */
-  const research = contributeWorkout(req.user, db.prepare('SELECT * FROM workouts WHERE id = ?').get(b.id), normSplits);
+  const research = contributeWorkout(req.user, savedWorkout, normSplits);
 
   res.status(201).json({ ok: true, workoutId: b.id, aiFeedback, newPb, research: { contributed: research.contributed } });
 });
@@ -216,7 +227,9 @@ workoutsRouter.get('/:id', (req, res) => {
   res.json({
     workout: {
       ...w, plan: safeJson(w.workout_plan_json), aiFeedback: safeJson(w.ai_feedback_json),
-      hrSeries: safeJson(w.hr_series_json, []), hrZones: safeJson(w.hr_zones_json),
+      // safeJson(null) parses to null rather than falling back — coerce so a
+      // workout without a stored series always presents an empty array.
+      hrSeries: safeJson(w.hr_series_json, []) || [], hrZones: safeJson(w.hr_zones_json),
       hr_series_json: undefined,
     },
     splits,

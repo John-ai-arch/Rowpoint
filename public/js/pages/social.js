@@ -8,7 +8,7 @@ export async function renderSocial(el) {
   }
   el.innerHTML = `<h1>Social</h1><p class="muted">Loading…</p>`;
   const [{ connections, incoming, outgoing }, { groups }] = await Promise.all([
-    api('/social/connections'), api('/social/groups'),
+    api('/social/connections'), api('/groups/mine'),
   ]);
 
   el.innerHTML = `<h1>Social</h1>
@@ -38,9 +38,25 @@ export async function renderSocial(el) {
     <div class="card">
       <div class="row between"><h3>Groups</h3><button class="sm" id="newGroup">+ New group</button></div>
       ${groups.length ? groups.map(g => `<a class="list-item" style="color:inherit" href="#/group/${g.id}">
-        <div class="avatar">👥</div><div style="flex:1"><strong>${esc(g.name)}</strong>
-        <div class="muted small">${g.memberCount} member${g.memberCount === 1 ? '' : 's'}${g.muted ? ' · muted' : ''}</div></div></a>`).join('')
-    : '<p class="muted small">Groups are for friends training together — independent of any coach\'s team.</p>'}
+        <div class="avatar">${g.photoUrl ? `<img src="${esc(g.photoUrl)}" style="width:100%;height:100%;border-radius:inherit;object-fit:cover">` : '👥'}</div>
+        <div style="flex:1"><strong>${esc(g.name)}</strong>
+          ${g.role !== 'member' ? `<span class="badge blue">${esc(g.role)}</span>` : ''}
+        <div class="muted small">${g.memberCount} member${g.memberCount === 1 ? '' : 's'} · ${esc(g.privacy)}${g.muted ? ' · muted' : ''}</div></div></a>`).join('')
+    : '<p class="muted small">Groups bring leaderboards, challenges, team goals, chat, and achievements to friends, clubs, and schools training together.</p>'}
+      <div id="newGroupForm"></div>
+      <div class="row mt"><input id="joinCode" placeholder="Have an invite code? e.g. G7K2M4XQ" style="flex:1"><button class="sm secondary" id="joinByCode">Join</button></div>
+    </div>
+
+    <div class="card">
+      <h3>Discover groups</h3>
+      <p class="muted small">Search by team name, school, university, club, city, region, or country.</p>
+      <div class="row" style="flex-wrap:wrap;gap:6px">
+        <input id="dq" placeholder="Name / school / club…" style="flex:2;min-width:140px">
+        <input id="dCity" placeholder="City" style="width:110px">
+        <input id="dCountry" placeholder="Country" style="width:110px">
+        <button class="sm" id="discoverBtn">Search</button>
+      </div>
+      <div id="discoverOut"></div>
     </div>`;
 
   el.querySelector('#searchBtn').onclick = async () => {
@@ -87,13 +103,78 @@ export async function renderSocial(el) {
     toast('Report sent to the moderation team.', 'success');
   });
 
-  el.querySelector('#newGroup').onclick = async () => {
-    const name = prompt('Group name:');
-    if (!name) return;
+  el.querySelector('#newGroup').onclick = () => {
+    const form = el.querySelector('#newGroupForm');
+    if (form.innerHTML) { form.innerHTML = ''; return; }
+    form.innerHTML = `<div class="notice mt">
+      <label class="field"><span>Group name</span><input id="gName" placeholder="Riverside Rowing Club"></label>
+      <label class="field"><span>Description (optional)</span><input id="gDesc" placeholder="What is this group about?"></label>
+      <div class="grid cols2">
+        <label class="field"><span>Privacy</span>
+          <select id="gPrivacy"><option value="private">Private — invite code / join requests</option><option value="public">Public — anyone can find & join</option></select></label>
+        <label class="field"><span>School / university (optional)</span><input id="gSchool"></label>
+        <label class="field"><span>Club (optional)</span><input id="gClub"></label>
+        <label class="field"><span>City (optional)</span><input id="gCity"></label>
+        <label class="field"><span>State/Province (optional)</span><input id="gRegion"></label>
+        <label class="field"><span>Country (optional)</span><input id="gCountry"></label>
+      </div>
+      <button class="sm" id="gCreate">Create group</button>
+    </div>`;
+    form.querySelector('#gCreate').onclick = async () => {
+      const v = (id) => form.querySelector(`#${id}`).value.trim();
+      try {
+        const { groupId } = await api('/groups', {
+          method: 'POST',
+          body: {
+            name: v('gName'), description: v('gDesc'), privacy: v('gPrivacy'),
+            school: v('gSchool'), club: v('gClub'), city: v('gCity'), region: v('gRegion'), country: v('gCountry'),
+          },
+        });
+        toast('Group created — share the invite code from the group dashboard.', 'success');
+        location.hash = `#/group/${groupId}`;
+      } catch (e) { toast(e.message, 'error'); }
+    };
+  };
+
+  el.querySelector('#joinByCode').onclick = async () => {
+    const code = el.querySelector('#joinCode').value.trim();
+    if (!code) return;
     try {
-      const { groupId } = await api('/social/groups', { method: 'POST', body: { name, memberIds: [] } });
-      toast('Group created — add connected friends from the group page.', 'success');
-      location.hash = `#/group/${groupId}`;
-    } catch (e) { toast(e.message, 'error'); }
+      const r = await api('/groups/join-by-code', { method: 'POST', body: { code } });
+      toast(`Welcome to ${r.name}!`, 'success');
+      location.hash = `#/group/${r.groupId}`;
+    } catch (e) { toast(e.message, 'error', 6000); }
+  };
+
+  el.querySelector('#discoverBtn').onclick = async () => {
+    const out = el.querySelector('#discoverOut');
+    const p = new URLSearchParams();
+    if (el.querySelector('#dq').value.trim()) p.set('q', el.querySelector('#dq').value.trim());
+    if (el.querySelector('#dCity').value.trim()) p.set('city', el.querySelector('#dCity').value.trim());
+    if (el.querySelector('#dCountry').value.trim()) p.set('country', el.querySelector('#dCountry').value.trim());
+    try {
+      const { groups: found } = await api(`/groups/discover?${p}`);
+      out.innerHTML = found.length ? found.map(g => `
+        <div class="list-item"><div class="avatar">👥</div>
+          <div style="flex:1"><strong>${esc(g.name)}</strong> <span class="badge ${g.privacy === 'public' ? 'green' : 'gray'}">${esc(g.privacy)}</span>
+            <div class="muted small">${g.memberCount} member${g.memberCount === 1 ? '' : 's'}
+              ${[g.school, g.club, g.city, g.region, g.country].filter(Boolean).length ? ' · ' + [g.school, g.club, g.city, g.region, g.country].filter(Boolean).map(esc).join(', ') : ''}
+              ${g.description ? `<br>${esc(g.description)}` : ''}</div></div>
+          ${g.isMember ? '<a class="btn ghost sm" href="#/group/' + g.id + '">Open</a>'
+      : g.pendingRequest ? '<span class="badge amber">request pending</span>'
+        : g.privacy === 'public' ? `<button class="sm" data-join="${g.id}">Join</button>`
+          : `<button class="sm secondary" data-reqjoin="${g.id}">Request to join</button>`}
+        </div>`).join('') : '<p class="muted small mt">No groups match — create one!</p>';
+      out.querySelectorAll('[data-join]').forEach(b => b.onclick = async () => {
+        await api(`/groups/${b.dataset.join}/join`, { method: 'POST' });
+        toast('Joined!', 'success'); location.hash = `#/group/${b.dataset.join}`;
+      });
+      out.querySelectorAll('[data-reqjoin]').forEach(b => b.onclick = async () => {
+        const message = prompt('Add a note for the group admins (optional):') || '';
+        await api(`/groups/${b.dataset.reqjoin}/join-request`, { method: 'POST', body: { message } });
+        toast('Request sent — an admin will review it.', 'success');
+        b.outerHTML = '<span class="badge amber">request pending</span>';
+      });
+    } catch (e) { out.innerHTML = `<p class="muted small mt">${esc(e.message)}</p>`; }
   };
 }

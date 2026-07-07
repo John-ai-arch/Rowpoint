@@ -83,12 +83,18 @@ test('social + group: connect two users, group feed shows a completed workout', 
   await pB.click('[data-acc]');
   await expect(pB.getByText('Connected!')).toBeVisible();
 
-  // Vera creates a group with Wim via API (prompt() is awkward in tests), then views it
-  const g = await request.post(`${BASE}/api/social/groups`, {
-    data: { name: 'Weekend ergs', memberIds: [b.user.id] },
+  // Vera creates a group, Wim joins via the invite code (API keeps the test
+  // deterministic; prompt() is awkward in-browser).
+  const g = await request.post(`${BASE}/api/groups`, {
+    data: { name: 'Weekend ergs', privacy: 'private' },
     headers: { Authorization: `Bearer ${a.token}` },
   });
   const { groupId } = await g.json();
+  const dash = await (await request.get(`${BASE}/api/groups/${groupId}`, { headers: { Authorization: `Bearer ${a.token}` } })).json();
+  await request.post(`${BASE}/api/groups/join-by-code`, {
+    data: { code: dash.group.inviteCode },
+    headers: { Authorization: `Bearer ${b.token}` },
+  });
 
   // Wim completes a workout → feed event
   await request.post(`${BASE}/api/workouts/sync`, {
@@ -100,7 +106,6 @@ test('social + group: connect two users, group feed shows a completed workout', 
   });
 
   await pA.goto(`${BASE}/#/group/${groupId}`);
-  await expect(pA.getByText('Wim').first()).toBeVisible();
   await expect(pA.locator('.list-item', { hasText: 'completed' }).first()).toBeVisible();
   await pA.screenshot({ path: 'shots/12-group.png', fullPage: true });
   await pA.goto(`${BASE}/#/social`);

@@ -5,9 +5,17 @@
 // the schema below is deliberately plain SQL (TEXT ids, INTEGER unix
 // timestamps, no SQLite-specific types) so it ports to Postgres directly.
 // All access goes through prepared statements — no string interpolation.
+import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { config } from './config.js';
+
+// Persistence guard: remember whether the database file existed BEFORE this
+// boot. A production process that keeps finding no database is the classic
+// ephemeral-filesystem deployment bug (every redeploy silently wipes all
+// accounts, so "users can't log back in" and "the same email can sign up
+// twice" — the data is simply gone). Detected and shouted about below.
+const dbExistedAtBoot = fs.existsSync(config.dbFile);
 
 export const db = new DatabaseSync(config.dbFile);
 db.exec('PRAGMA journal_mode = WAL;');
@@ -390,6 +398,179 @@ ensureColumn('research_workouts', 'equipment', 'equipment TEXT');
 // The owner account is always an admin (evaluated at every boot so a fresh
 // database — or an account created before this column existed — heals itself).
 db.prepare("UPDATE users SET role = 'admin' WHERE email = ? AND role != 'admin'").run(config.ADMIN_EMAIL);
+
+/* -------------------- groups (expanded social feature) --------------------
+   Groups grow from "shared feed" into a full social layer: profiles &
+   discovery metadata, privacy modes with invite codes and join requests,
+   member roles, chat, challenges, collaborative goals, feed reactions &
+   comments, preserved weekly leaderboard history, and user achievements. */
+ensureColumn('groups', 'description', 'description TEXT');
+ensureColumn('groups', 'photo_url', 'photo_url TEXT');
+ensureColumn('groups', 'privacy', "privacy TEXT NOT NULL DEFAULT 'private'"); // public|private
+ensureColumn('groups', 'invite_code', 'invite_code TEXT');
+ensureColumn('groups', 'hide_members', 'hide_members INTEGER NOT NULL DEFAULT 0');
+ensureColumn('groups', 'school', 'school TEXT');
+ensureColumn('groups', 'club', 'club TEXT');
+ensureColumn('groups', 'city', 'city TEXT');
+ensureColumn('groups', 'region', 'region TEXT');
+ensureColumn('groups', 'country', 'country TEXT');
+ensureColumn('group_members', 'role', "role TEXT NOT NULL DEFAULT 'member'"); // owner|admin|moderator|member
+
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_groups_invite ON groups(invite_code) WHERE invite_code IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
+
+CREATE TABLE IF NOT EXISTS group_join_requests (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','denied')),
+  created_at INTEGER NOT NULL,
+  UNIQUE(group_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS group_messages (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'text' CHECK (kind IN ('text','announcement','image','workout')),
+  body TEXT,
+  image_data TEXT,                      -- small data-URL images only (capped at write)
+  workout_id TEXT,                      -- shared-workout messages
+  pinned INTEGER NOT NULL DEFAULT 0,
+  deleted INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_group_messages ON group_messages(group_id, created_at);
+
+CREATE TABLE IF NOT EXISTS group_message_reactions (
+  id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL REFERENCES group_messages(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(message_id, user_id, emoji)
+);
+
+CREATE TABLE IF NOT EXISTS group_challenges (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  creator_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  metric TEXT NOT NULL,                 -- meters|workouts|avg_split|streak|team_meters|custom
+  target REAL,                          -- team_meters goal, or null
+  starts_at INTEGER NOT NULL,
+  ends_at INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','finished')),
+  winners_json TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_group_challenges ON group_challenges(group_id, status);
+
+CREATE TABLE IF NOT EXISTS group_goals (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  creator_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  metric TEXT NOT NULL CHECK (metric IN ('meters','workouts','hours')),
+  target REAL NOT NULL,
+  starts_at INTEGER NOT NULL,
+  completed_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_feed_likes (
+  id TEXT PRIMARY KEY,
+  feed_id TEXT NOT NULL REFERENCES group_feed(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  UNIQUE(feed_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS group_feed_comments (
+  id TEXT PRIMARY KEY,
+  feed_id TEXT NOT NULL REFERENCES group_feed(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_feed_comments ON group_feed_comments(feed_id, created_at);
+
+/* Preserved weekly leaderboard history: one row per member per completed
+   week, written when the week closes (lazily, on first group view after
+   Monday). Also the source of Weekly Champion awards. */
+CREATE TABLE IF NOT EXISTS group_week_history (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  week_key TEXT NOT NULL,               -- ISO week, e.g. 2026-W27
+  user_id TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  meters REAL NOT NULL,
+  workouts INTEGER NOT NULL,
+  rank INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(group_id, week_key, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_achievements (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  badge TEXT NOT NULL,                  -- e.g. first_workout, meters_1m, streak_30
+  label TEXT NOT NULL,
+  context_json TEXT,
+  achieved_at INTEGER NOT NULL,
+  UNIQUE(user_id, badge)
+);
+CREATE INDEX IF NOT EXISTS idx_achievements_user ON user_achievements(user_id);
+`);
+
+// Backfill for groups created before the expansion: creators become owners
+// and every group gets an invite code.
+db.prepare(`UPDATE group_members SET role = 'owner'
+            WHERE role = 'member' AND EXISTS (
+              SELECT 1 FROM groups g WHERE g.id = group_members.group_id AND g.creator_id = group_members.user_id)`).run();
+for (const g of db.prepare('SELECT id FROM groups WHERE invite_code IS NULL').all()) {
+  const code = crypto.randomBytes(5).toString('base64url').toUpperCase().replace(/[^A-Z0-9]/g, 'X').slice(0, 8);
+  db.prepare('UPDATE groups SET invite_code = ? WHERE id = ?').run(`G${code}`, g.id);
+}
+
+/* -------------------- database identity & boot tracking --------------------
+   One row of instance metadata lets the app (and the admin System tab) prove
+   whether storage is actually persistent: the instance id and created_at
+   survive restarts only if the data directory does. A brand-new database on
+   a non-first production boot is the smoking gun for ephemeral storage. */
+db.exec(`CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+)`);
+function metaGet(key) { return db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value ?? null; }
+function metaSet(key, value) {
+  db.prepare('INSERT INTO meta (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .run(key, String(value));
+}
+if (!metaGet('instance_id')) {
+  metaSet('instance_id', crypto.randomUUID());
+  metaSet('db_created_at', Math.floor(Date.now() / 1000));
+}
+metaSet('boot_count', Number(metaGet('boot_count') || 0) + 1);
+metaSet('last_boot_at', Math.floor(Date.now() / 1000));
+
+/** Persistence facts for boot-time warnings and the admin System tab. */
+export function dbPersistenceInfo() {
+  return {
+    dataDir: config.dataDir,
+    dbFile: config.dbFile,
+    dataDirConfigured: !!process.env.ROWPOINT_DATA_DIR,
+    dbExistedAtBoot,
+    instanceId: metaGet('instance_id'),
+    dbCreatedAt: Number(metaGet('db_created_at')),
+    bootCount: Number(metaGet('boot_count')),
+    tokenSecretFromEnv: !!process.env.ROWPOINT_TOKEN_SECRET,
+    userCount: db.prepare('SELECT COUNT(*) c FROM users').get().c,
+  };
+}
 
 // Seed the default study tag (§5.2) once.
 const study = db.prepare('SELECT id FROM studies WHERE tag = ?').get('baseline-2026');
