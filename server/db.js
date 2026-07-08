@@ -65,6 +65,19 @@ CREATE TABLE IF NOT EXISTS email_verifications (
   used INTEGER NOT NULL DEFAULT 0
 );
 
+/* Self-service password recovery. The reset code is stored HASHED (never in
+   the clear), single-use, short-lived, and bumps token_version on use so a
+   reset also signs the account out everywhere. */
+CREATE TABLE IF NOT EXISTS password_resets (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id, used);
+
 /* Dev mailer sink: in production this is replaced by a real email provider. */
 CREATE TABLE IF NOT EXISTS email_outbox (
   id TEXT PRIMARY KEY,
@@ -536,6 +549,17 @@ CREATE TABLE IF NOT EXISTS user_achievements (
 CREATE INDEX IF NOT EXISTS idx_achievements_user ON user_achievements(user_id);
 `);
 
+/* -------------------- performance indexes --------------------
+   Added after the tables/migrations above so they cover columns introduced by
+   later builds. All are IF NOT EXISTS and match real query shapes: admin
+   security lookups by email, and the "incoming connection requests" query that
+   filters by addressee + status. */
+db.exec(`
+CREATE INDEX IF NOT EXISTS idx_auth_events_email ON auth_events(email, created_at);
+CREATE INDEX IF NOT EXISTS idx_connections_addressee ON connections(addressee_id, status);
+CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at);
+`);
+
 // Backfill for groups created before the expansion: creators become owners
 // and every group gets an invite code.
 db.prepare(`UPDATE group_members SET role = 'owner'
@@ -567,6 +591,19 @@ if (!metaGet('instance_id')) {
 metaSet('boot_count', Number(metaGet('boot_count') || 0) + 1);
 metaSet('last_boot_at', Math.floor(Date.now() / 1000));
 
+/* -------------------- schema versioning --------------------
+   The schema is built and evolved idempotently: every table is CREATE ...
+   IF NOT EXISTS and every later column/index goes through ensureColumn() or
+   CREATE INDEX IF NOT EXISTS, so bringing an old database up to date is just
+   "run this file". SCHEMA_VERSION is recorded for observability and as the
+   gate for any *destructive* future migration (which must branch on the stored
+   version rather than run unconditionally). Bump it whenever the schema
+   changes. */
+const SCHEMA_VERSION = 3;
+const priorSchema = Number(metaGet('schema_version') || 0);
+if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
+export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };
+
 /**
  * Run a set of synchronous DB writes atomically. node:sqlite has no
  * better-sqlite3-style db.transaction(), so we drive BEGIN/COMMIT/ROLLBACK
@@ -597,6 +634,7 @@ export function dbPersistenceInfo() {
     bootCount: Number(metaGet('boot_count')),
     tokenSecretFromEnv: !!process.env.ROWPOINT_TOKEN_SECRET,
     userCount: db.prepare('SELECT COUNT(*) c FROM users').get().c,
+    schemaVersion: SCHEMA_VERSION,
   };
 }
 

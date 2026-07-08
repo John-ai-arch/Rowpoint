@@ -7,6 +7,7 @@
 import { WebSocketServer } from 'ws';
 import { db } from './db.js';
 import { verifyToken } from './util.js';
+import { parseCookies, SESSION_COOKIE } from './cookies.js';
 
 const STALE_AFTER_MS = 6000;
 
@@ -71,7 +72,11 @@ export function attachRealtime(httpServer) {
 
   wss.on('connection', (ws, req) => {
     const url = new URL(req.url, 'http://localhost');
-    const payload = verifyToken(url.searchParams.get('token'));
+    // The browser sends the HttpOnly session cookie on the same-origin upgrade
+    // request; a ?token= query param is accepted as a fallback (grandfathered
+    // sessions and non-browser clients).
+    const token = url.searchParams.get('token') || parseCookies(req)[SESSION_COOKIE];
+    const payload = verifyToken(token);
     const user = payload?.uid ? db.prepare('SELECT * FROM users WHERE id = ?').get(payload.uid) : null;
     if (!user || user.suspended || !user.email_verified) {
       ws.send(JSON.stringify({ type: 'error', code: 'unauthenticated', message: 'Sign in with a verified account to use live sessions.' }));

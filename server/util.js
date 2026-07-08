@@ -68,6 +68,19 @@ export function verificationCode() {
   return String(crypto.randomInt(100000, 1000000)); // 6 digits
 }
 
+// Password-reset codes carry more entropy than the 6-digit email code (they
+// gate a password change), and are stored only as a keyed hash.
+export function resetCode(len = 8) {
+  let out = '';
+  const bytes = crypto.randomBytes(len);
+  for (let i = 0; i < len; i++) out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+  return out;
+}
+
+export function hashResetCode(code) {
+  return crypto.createHmac('sha256', config.tokenSecret).update(String(code).toUpperCase()).digest('hex');
+}
+
 /* ---------------- research pseudonymization (§5.2) ---------------- */
 
 export function researchId(userId) {

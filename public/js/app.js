@@ -158,6 +158,33 @@ window.addEventListener('rp:navigate', route);
 // (nav, chrome, and the active page) picks up the new locale immediately.
 window.addEventListener('rp:locale', route);
 
+/* ---------------- global crash reporting (§3.2) ----------------
+   Uncaught errors and unhandled promise rejections are reported — sanitized,
+   deduplicated, and hard-capped per page load — to the health-events endpoint,
+   where they surface as client-crash trends in the admin dashboard. Reporting
+   never blocks the UI and silently no-ops when signed out or offline. No user
+   content or tokens are included; only the error message + source location. */
+const _crashSeen = new Set();
+let _crashCount = 0;
+async function reportClientError(kind, detail) {
+  if (!state.user) return;                       // only meaningful once signed in
+  const text = String(detail || 'error').slice(0, 500);
+  const key = text.slice(0, 120);
+  if (_crashSeen.has(key) || _crashCount >= 25) return; // dedupe + per-load cap
+  _crashSeen.add(key); _crashCount++;
+  try { await api('/users/me/health-events', { method: 'POST', body: { kind, detail: text } }); }
+  catch { /* offline or signed out — drop it */ }
+}
+window.addEventListener('error', (e) => {
+  if (!e?.message) return;                        // ignore resource-load noise
+  const where = e.filename ? ` @ ${String(e.filename).replace(location.origin, '')}:${e.lineno || 0}` : '';
+  reportClientError('crash', `${e.message}${where}`);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e?.reason;
+  reportClientError('crash', `unhandledrejection: ${(r && (r.message || r)) || 'unknown'}`);
+});
+
 let booted = false;
 async function boot() {
   // First launch: let the user pick a language before anything else renders.

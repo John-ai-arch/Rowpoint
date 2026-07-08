@@ -5,10 +5,15 @@
 import { db } from './db.js';
 import { config } from './config.js';
 import { verifyToken, ApiError, uuid, now } from './util.js';
+import { parseCookies, SESSION_COOKIE } from './cookies.js';
 
 export function getUserFromRequest(req) {
   const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : (req.query?.token || null);
+  // Auth sources, in order: Bearer header (API clients / tests), the HttpOnly
+  // session cookie (browser), then a ?token= query param (WebSocket fallback).
+  const token = header.startsWith('Bearer ')
+    ? header.slice(7)
+    : (parseCookies(req)[SESSION_COOKIE] || req.query?.token || null);
   const payload = verifyToken(token);
   if (!payload?.uid) return null;
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.uid);

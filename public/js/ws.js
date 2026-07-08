@@ -13,9 +13,13 @@ export function onRealtime(fn) { listeners.add(fn); return () => listeners.delet
 function emit(msg) { for (const fn of listeners) { try { fn(msg); } catch (e) { console.error(e); } } }
 
 function connect() {
-  if (!state.token || ws) return;
+  // Auth is carried by the HttpOnly session cookie the browser sends on the
+  // same-origin WS handshake; a legacy in-memory token is appended as a
+  // fallback for grandfathered sessions only.
+  if (!state.user || ws) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(state.token)}`);
+  const q = state.token ? `?token=${encodeURIComponent(state.token)}` : '';
+  ws = new WebSocket(`${proto}://${location.host}/ws${q}`);
   ws.onopen = () => {
     alive = true; retryMs = 1000;
     for (const [channel, role] of wanted) ws.send(JSON.stringify({ type: 'subscribe', channel, role }));

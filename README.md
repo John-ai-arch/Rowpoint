@@ -79,11 +79,35 @@ leaderboard → AI feedback journeys in a real browser.
 
 ## Production hardening
 
+- **Cookie sessions + CSRF**: the browser authenticates with an **HttpOnly,
+  Secure, SameSite=Lax** `rp_session` cookie (script can't read it, so an XSS
+  payload can't steal the token — unlike the old localStorage token). A readable
+  `rp_csrf` cookie backs a **stateless double-submit CSRF** check on every
+  cookie-authenticated mutating request (`server/cookies.js`). Programmatic
+  clients keep using `Authorization: Bearer` and are CSRF-exempt by construction
+  (no ambient cookie). Legacy Bearer/localStorage sessions are transparently
+  migrated to a cookie on the first `/auth/me`, so the cutover forces no one to
+  re-log-in. The WebSocket authenticates from the same cookie on its handshake.
 - **Session security**: HMAC-signed stateless tokens carry a per-user
-  `token_version`; `POST /api/auth/logout` and an admin password reset bump it,
-  invalidating every previously-issued token server-side (a leaked token can't
-  outlive a logout or reset). Missing versions default to 0 so the upgrade is
-  backward-compatible.
+  `token_version`; `POST /api/auth/logout`, a self-service password reset, and an
+  admin password reset all bump it, invalidating every previously-issued token
+  server-side (a leaked token can't outlive a logout or reset). Missing versions
+  default to 0 so the upgrade is backward-compatible.
+- **Self-service password recovery**: `POST /api/auth/forgot-password` →
+  `POST /api/auth/reset-password`. Reset codes are single-use, hashed at rest
+  (keyed HMAC), expire in an hour, and are IP-rate-limited; responses never
+  reveal whether an account exists (anti-enumeration); a successful reset bumps
+  `token_version` (signs the account out everywhere) and is audit-logged.
+- **Rate limiting**: sliding-window limits on login, signup, email
+  verification, resend, **forgot/reset password**, and the **LLM refresh** path
+  (`server/ratelimit.js`), plus the existing email-search anti-enumeration limit.
+- **Crash reporting**: uncaught browser errors and unhandled promise rejections
+  are captured (sanitized, deduplicated, capped) to `health_events` and surface
+  as client-crash trends in the admin dashboard alongside API/BLE/sync failures.
+- **Schema versioning**: the schema is built and evolved idempotently
+  (`CREATE ... IF NOT EXISTS` + additive `ensureColumn`); a recorded
+  `schema_version` in the `meta` table gates any future destructive migration
+  and is surfaced on the admin System tab.
 - **Security headers**: a tuned `Content-Security-Policy` (same-origin;
   inline styles only — no inline scripts; Google Identity + Fonts allowed;
   `object-src 'none'`, `frame-ancestors 'none'`), `Permissions-Policy`

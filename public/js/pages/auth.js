@@ -51,6 +51,7 @@ export async function renderAuth(el) {
     <label class="field"><span>${esc(t('auth.email'))}</span><input id="email" type="email" autocomplete="email" value="${esc(data.email || '')}"></label>
     <label class="field"><span>${esc(t('auth.password'))}</span><input id="password" type="password" autocomplete="current-password"></label>
     <button id="loginBtn" style="width:100%">${esc(t('auth.signInCta'))}</button>
+    <div class="center mt"><a href="#" id="forgotLink" class="small muted">${esc(t('auth.forgotPassword'))}</a></div>
     ${oauthButtonsHtml()}`;
 
   function signupHtml() {
@@ -191,6 +192,8 @@ export async function renderAuth(el) {
       } catch (e) { toast(e.message, 'error'); }
     });
 
+    el.querySelector('#forgotLink')?.addEventListener('click', (e) => { e.preventDefault(); showForgot(val('#email')); });
+
     el.querySelector('#next1')?.addEventListener('click', () => {
       Object.assign(data, { displayName: val('#displayName'), email: val('#email'), password: val('#password'), teamCode: val('#teamCode') });
       if (!data.displayName || !data.email || (data.password || '').length < 8) { toast(t('auth.fillNamePassword'), 'error'); return; }
@@ -264,8 +267,55 @@ export async function renderAuth(el) {
     el.querySelector('#backToLogin').onclick = () => { mode = 'login'; step = 1; draw(); };
   }
 
+  /* ---------------- password recovery ---------------- */
+
+  function showForgot(prefillEmail) {
+    el.innerHTML = `<div class="auth-wrap"><div class="card">
+      <h2>${esc(t('auth.forgotTitle'))}</h2>
+      <p class="muted">${esc(t('auth.forgotSub'))}</p>
+      <label class="field"><span>${esc(t('auth.email'))}</span><input id="fEmail" type="email" autocomplete="email" value="${esc(prefillEmail || '')}"></label>
+      <button id="fSend" style="width:100%">${esc(t('auth.forgotSend'))}</button>
+      <div class="center mt"><button class="ghost sm" id="fBack">${esc(t('verify.backToSignIn'))}</button></div>
+    </div></div>`;
+    el.querySelector('#fBack').onclick = () => { mode = 'login'; step = 1; draw(); };
+    el.querySelector('#fSend').onclick = async () => {
+      const email = el.querySelector('#fEmail').value.trim();
+      if (!email) { toast(t('auth.forgotNeedEmail'), 'error'); return; }
+      try {
+        const r = await api('/auth/forgot-password', { method: 'POST', body: { email } });
+        toast(t('auth.forgotSent'), 'success', 6000);
+        showReset(email, r.devCode);
+      } catch (e) { toast(e.message, 'error'); }
+    };
+  }
+
+  function showReset(email, devCode) {
+    el.innerHTML = `<div class="auth-wrap"><div class="card">
+      <h2>${esc(t('auth.resetTitle'))}</h2>
+      <p class="muted">${esc(t('auth.resetSub', { email }))}</p>
+      ${devCode ? `<div class="notice mb"><strong>${esc(t('verify.devMode'))}</strong> ${esc(t('auth.resetDevBody'))} <strong style="font-size:1.2rem;letter-spacing:3px">${esc(devCode)}</strong></div>` : ''}
+      <label class="field"><span>${esc(t('auth.resetCodeLabel'))}</span><input id="rCode" maxlength="8" placeholder="ABCD2345" autocomplete="one-time-code" style="text-transform:uppercase"></label>
+      <label class="field"><span>${esc(t('auth.resetNewPassword'))}</span><input id="rPass" type="password" autocomplete="new-password"></label>
+      <button id="rSubmit" style="width:100%">${esc(t('auth.resetSubmit'))}</button>
+      <div class="center mt"><button class="ghost sm" id="rBack">${esc(t('verify.backToSignIn'))}</button></div>
+    </div></div>`;
+    el.querySelector('#rBack').onclick = () => { mode = 'login'; step = 1; draw(); };
+    el.querySelector('#rSubmit').onclick = async () => {
+      const code = el.querySelector('#rCode').value.trim();
+      const newPassword = el.querySelector('#rPass').value;
+      if ((newPassword || '').length < 8) { toast(t('auth.resetWeak'), 'error'); return; }
+      try {
+        const res = await api('/auth/reset-password', { method: 'POST', body: { email, code, newPassword } });
+        finish(res, t('auth.resetDone'));
+      } catch (e) { toast(e.message, 'error'); }
+    };
+  }
+
   function finish(res, msg) {
-    setSession(res.token, res.user);
+    // The server set the HttpOnly session + CSRF cookies on this response, so
+    // the browser is authenticated via cookie — we deliberately keep no token
+    // in JS (pass null) rather than holding a Bearer token in memory.
+    setSession(null, res.user);
     if (msg) toast(msg, 'success');
     window.dispatchEvent(new Event('rp:session'));
     location.hash = '#/';

@@ -49,6 +49,7 @@ import { groupsRouter } from './groups.js';
 import { progressRouter } from './progress.js';
 import { aiRouter } from './aiRouter.js';
 import { adminRouter } from './admin.js';
+import { csrfProtection } from './cookies.js';
 import { attachRealtime } from './realtime.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -97,6 +98,12 @@ export function createApp() {
 
   // API usage counters for the admin System tab (in-memory, per process).
   app.use('/api', metricsMiddleware);
+
+  // CSRF protection for cookie-authenticated, state-changing requests. No-op
+  // for GETs, for Bearer-token (API/test) requests, and for requests with no
+  // session cookie — so it hardens the browser flow without touching anything
+  // else. (See server/cookies.js for the double-submit rationale.)
+  app.use('/api', csrfProtection);
 
   app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);

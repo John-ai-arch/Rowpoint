@@ -7,6 +7,7 @@
 import { Router } from 'express';
 import { db } from './db.js';
 import { authRequired } from './middleware.js';
+import { rateLimit } from './ratelimit.js';
 import { buildTrainingAnalysis } from './ai/trainingAnalysis.js';
 import { generateRecommendation } from './ai/coach.js';
 import { logger } from './log.js';
@@ -17,9 +18,16 @@ const log = logger('ai-router');
 export const aiRouter = Router();
 aiRouter.use(authRequired);
 
+// Only a forced refresh (?refresh=1) actually calls the LLM; cap those per user
+// so a stuck client or abusive caller can't run up model cost. The cached
+// once-a-day read path below is unlimited.
+const limitAiRefresh = (req, res, next) => (req.query.refresh === '1'
+  ? rateLimit('ai_refresh', 20, 60 * 60 * 1000)(req, res, next)
+  : next());
+
 /* ---------------- today's recommendation ---------------- */
 
-aiRouter.get('/suggestion', async (req, res) => {
+aiRouter.get('/suggestion', limitAiRefresh, async (req, res) => {
   const date = todayStr();
   const refresh = req.query.refresh === '1';
   let row = db.prepare('SELECT * FROM ai_suggestions WHERE user_id = ? AND date = ?').get(req.user.id, date);

@@ -1032,4 +1032,119 @@ test('daily suggested workouts have stable shareable ids (§7)', async () => {
   assert.deepEqual(a.body.suggestions.map(s => s.id), b.body.suggestions.map(s => s.id));
 });
 
+/* ---------------- cookie sessions + CSRF (production auth) ---------------- */
+
+async function loginCookies(email, password = 'password123') {
+  const r = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const setCookie = r.headers.getSetCookie().join('\n');
+  const session = setCookie.match(/rp_session=([^;]+)/)?.[1];
+  const csrf = setCookie.match(/rp_csrf=([^;]+)/)?.[1];
+  return { r, setCookie, session, csrf, cookieHeader: `rp_session=${session}; rp_csrf=${csrf}` };
+}
+
+test('auth: login sets an HttpOnly session cookie + a readable CSRF cookie, and cookie auth works', async () => {
+  resetRateLimits();
+  await makeUser('cookieuser@test.com');
+  const { r, setCookie, session, csrf, cookieHeader } = await loginCookies('cookieuser@test.com');
+  assert.equal(r.status, 200);
+  assert.match(setCookie, /rp_session=/);
+  assert.match(setCookie, /HttpOnly/i, 'session cookie is HttpOnly');
+  assert.match(setCookie, /SameSite=Lax/i);
+  assert.match(setCookie, /rp_csrf=/);
+  assert.ok(session && csrf);
+  // The CSRF cookie must NOT be HttpOnly (the SPA has to read it back).
+  const csrfLine = setCookie.split('\n').find(l => l.startsWith('rp_csrf='));
+  assert.doesNotMatch(csrfLine, /HttpOnly/i, 'CSRF cookie is readable by script');
+  // A GET authenticates purely from the cookie (no Authorization header).
+  const me = await fetch(`${BASE}/api/auth/me`, { headers: { Cookie: cookieHeader } });
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).user.email, 'cookieuser@test.com');
+});
+
+test('security: CSRF blocks a cookie-auth mutating request without the token, allows it with the token, and Bearer is exempt', async () => {
+  resetRateLimits();
+  const u = await makeUser('csrf@test.com');
+  const { csrf, cookieHeader } = await loginCookies('csrf@test.com');
+  const body = JSON.stringify({ kind: 'client_error', detail: 'csrf probe' });
+  const H = { 'Content-Type': 'application/json' };
+
+  const missing = await fetch(`${BASE}/api/users/me/health-events`, { method: 'POST', headers: { ...H, Cookie: cookieHeader }, body });
+  assert.equal(missing.status, 403, 'cookie POST without CSRF header is rejected');
+  assert.equal((await missing.json()).error, 'csrf_failed');
+
+  const withToken = await fetch(`${BASE}/api/users/me/health-events`, { method: 'POST', headers: { ...H, Cookie: cookieHeader, 'X-CSRF-Token': csrf }, body });
+  assert.equal(withToken.status, 200, 'cookie POST with matching CSRF header is accepted');
+
+  const wrong = await fetch(`${BASE}/api/users/me/health-events`, { method: 'POST', headers: { ...H, Cookie: cookieHeader, 'X-CSRF-Token': 'nope' }, body });
+  assert.equal(wrong.status, 403, 'a mismatched CSRF header is rejected');
+
+  // Bearer-authenticated requests carry no ambient cookie → exempt from CSRF.
+  assert.equal((await req('/users/me/health-events', { method: 'POST', body: { kind: 'client_error', detail: 'bearer ok' }, token: u.token })).status, 200);
+});
+
+test('auth: logout clears the session cookies and bumps token_version', async () => {
+  resetRateLimits();
+  const u = await makeUser('logoutcookie@test.com');
+  const { csrf, cookieHeader } = await loginCookies('logoutcookie@test.com');
+  const out = await fetch(`${BASE}/api/auth/logout`, { method: 'POST', headers: { Cookie: cookieHeader, 'X-CSRF-Token': csrf } });
+  assert.equal(out.status, 200);
+  const cleared = out.headers.getSetCookie().join('\n');
+  assert.match(cleared, /rp_session=;|rp_session=; /, 'session cookie is cleared');
+  assert.match(cleared, /Max-Age=0/);
+});
+
+/* ---------------- self-service password recovery ---------------- */
+
+test('password recovery: forgot-password never reveals whether an account exists (anti-enumeration)', async () => {
+  resetRateLimits();
+  await makeUser('recover@test.com');
+  const known = await req('/auth/forgot-password', { method: 'POST', body: { email: 'recover@test.com' } });
+  const unknown = await req('/auth/forgot-password', { method: 'POST', body: { email: 'ghost-account@test.com' } });
+  assert.equal(known.status, 200);
+  assert.equal(unknown.status, 200);
+  assert.equal(known.body.message, unknown.body.message, 'identical response either way');
+  assert.equal(unknown.body.devCode, undefined, 'no reset code for a non-existent account');
+  assert.match(String(known.body.devCode), /^[A-Z0-9]{8}$/, 'dev mode surfaces the reset code');
+});
+
+test('password recovery: a valid code resets the password, invalidates old sessions, and cannot be reused', async () => {
+  resetRateLimits();
+  const u = await makeUser('resetflow@test.com');
+  assert.equal((await req('/workouts/', { token: u.token })).status, 200);
+  const forgot = await req('/auth/forgot-password', { method: 'POST', body: { email: 'resetflow@test.com' } });
+  const code = forgot.body.devCode;
+  assert.ok(code);
+
+  const bad = await req('/auth/reset-password', { method: 'POST', body: { email: 'resetflow@test.com', code: 'WRONGXYZ', newPassword: 'newpassword1' } });
+  assert.equal(bad.status, 400, 'a wrong code is rejected');
+
+  const ok = await req('/auth/reset-password', { method: 'POST', body: { email: 'resetflow@test.com', code, newPassword: 'newpassword1' } });
+  assert.equal(ok.status, 200);
+  assert.ok(ok.body.token, 'reset logs the user straight in');
+
+  assert.equal((await req('/workouts/', { token: u.token })).status, 401, 'the pre-reset session is invalidated');
+  assert.equal((await req('/workouts/', { token: ok.body.token })).status, 200, 'the fresh session works');
+
+  resetRateLimits();
+  assert.equal((await req('/auth/login', { method: 'POST', body: { email: 'resetflow@test.com', password: 'password123' } })).status, 401, 'the old password no longer works');
+  assert.ok((await req('/auth/login', { method: 'POST', body: { email: 'resetflow@test.com', password: 'newpassword1' } })).body.token, 'the new password works');
+
+  const reuse = await req('/auth/reset-password', { method: 'POST', body: { email: 'resetflow@test.com', code, newPassword: 'anotherpass1' } });
+  assert.equal(reuse.status, 400, 'a used reset code cannot be reused');
+});
+
+test('password recovery: reset codes are rate-limited', async () => {
+  resetRateLimits();
+  await makeUser('resetrl@test.com');
+  let last;
+  for (let i = 0; i < 12; i++) {
+    last = await req('/auth/reset-password', { method: 'POST', body: { email: 'resetrl@test.com', code: 'BADCODE1', newPassword: 'whatever12' } });
+  }
+  assert.equal(last.status, 429, 'reset attempts are throttled');
+  resetRateLimits();
+});
+
 test.after(() => { server.close(); });
