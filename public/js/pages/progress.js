@@ -8,9 +8,14 @@ import { drawTrend } from '../components/charts.js';
 
 export async function renderProgress(el) {
   el.innerHTML = skeleton();
-  let data;
-  try { ({ progress: data } = await api('/me/progress')); }
-  catch (e) { el.innerHTML = `<div class="notice warn">${esc(e.message)}</div>`; return; }
+  let data, perf = null;
+  try {
+    const [p, s] = await Promise.all([
+      api('/me/progress'),
+      api('/performance/summary').catch(() => null), // additive; never blocks the page
+    ]);
+    data = p.progress; perf = s;
+  } catch (e) { el.innerHTML = `<div class="notice warn">${esc(e.message)}</div>`; return; }
 
   if (!data.totals.workouts) {
     el.innerHTML = `
@@ -39,6 +44,8 @@ export async function renderProgress(el) {
     </header>
 
     ${insightHtml(data, remaining, goalPct)}
+
+    ${perf ? perfHtml(perf) : ''}
 
     <div class="grid cols2">
       <div class="card">
@@ -166,6 +173,54 @@ function ringHtml(pct, valueText, unitText) {
       </linearGradient></defs>
     </svg>
     <div class="ring-label"><div class="v">${pct}%</div><div class="u">${esc(unitText)}</div></div>
+  </div>`;
+}
+
+/* Performance intelligence: readiness ring + race predictions (both explained). */
+function perfHtml(perf) {
+  const rd = perf.readiness, pr = perf.predictions;
+  const bandColor = { ready: 'var(--good)', moderate: 'var(--warn)', caution: 'var(--bad)' }[rd.band] || 'var(--accent)';
+  return `<div class="grid cols2">
+    <div class="card">
+      <h3>${esc(t('perf.readiness'))}</h3>
+      <div class="row" style="align-items:center;gap:16px;flex-wrap:wrap">
+        ${readinessRing(rd.score, bandColor)}
+        <div style="flex:1;min-width:150px">
+          <p style="margin:0 0 4px"><strong style="color:${bandColor};font-size:1.05rem">${esc(t('perf.band_' + rd.band))}</strong></p>
+          <p class="muted small" style="margin:0">${esc(rd.headline)}</p>
+        </div>
+      </div>
+      <div class="mt">
+        ${rd.factors.slice(0, 4).map(f => `<div class="small" style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-top:1px solid var(--bg2)">
+          <span>${esc(f.label)}</span><span style="color:${f.impact >= 0 ? 'var(--good)' : 'var(--bad)'}">${f.impact >= 0 ? '+' : ''}${f.impact}</span></div>`).join('')}
+      </div>
+      <p class="muted" style="font-size:.68rem;margin-top:8px">${esc(rd.disclaimer)}</p>
+    </div>
+    <div class="card">
+      <h3>${esc(t('perf.predictions'))}</h3>
+      ${pr.available ? `
+        <table><thead><tr><th>${esc(t('perf.distance'))}</th><th>${esc(t('perf.predicted'))}</th><th>/500m</th><th class="small">${esc(t('perf.range'))}</th></tr></thead><tbody>
+        ${pr.predictions.map(p => `<tr><td><strong>${esc(p.label)}</strong></td><td>${esc(p.time)}</td><td class="muted">${esc(p.split)}</td><td class="small muted">${esc(p.range)}</td></tr>`).join('')}
+        </tbody></table>
+        <p class="small mt"><span class="badge ${pr.confidence === 'high' ? 'good' : pr.confidence === 'low' ? '' : 'amber'}">${esc(t('perf.conf_' + pr.confidence))} · ${pr.confidencePct}%</span></p>
+        <details><summary class="small muted">${esc(t('perf.howCalculated'))}</summary>
+          <p class="small muted">${esc(t('perf.basedOn'))}: ${pr.basis.map(esc).join('; ')}.<br>${esc(pr.method)}</p></details>
+        <p class="muted" style="font-size:.68rem">${esc(pr.disclaimer)}</p>`
+    : `<div class="empty"><span class="ic" aria-hidden="true">📈</span><p class="muted small">${esc(pr.reason)}</p></div>`}
+    </div>
+  </div>`;
+}
+
+function readinessRing(score, color) {
+  const r = 56, c = 2 * Math.PI * r;
+  const offset = c * (1 - Math.min(100, score) / 100);
+  return `<div class="ring">
+    <svg viewBox="0 0 132 132" aria-hidden="true">
+      <circle class="track" cx="66" cy="66" r="${r}" stroke-width="12"></circle>
+      <circle class="bar" cx="66" cy="66" r="${r}" stroke-width="12" stroke="${color}"
+        stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"></circle>
+    </svg>
+    <div class="ring-label"><div class="v">${score}</div><div class="u">/100</div></div>
   </div>`;
 }
 

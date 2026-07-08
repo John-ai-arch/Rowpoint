@@ -1290,4 +1290,46 @@ test('training: current phase is available from the plan or inferred from the ra
   assert.ok(withPlan.body.phase.label);
 });
 
+/* ---------------- performance intelligence ---------------- */
+
+test('performance: training readiness returns a 0-100 score, band, and explained factors', async () => {
+  const u = await makeUser('readiness@test.com', 'rower', { best2kSeconds: 405 });
+  const r = await req('/performance/readiness', { token: u.token });
+  assert.equal(r.status, 200);
+  const rd = r.body.readiness;
+  assert.ok(rd.score >= 0 && rd.score <= 100);
+  assert.ok(['ready', 'moderate', 'caution'].includes(rd.band));
+  assert.ok(rd.headline && Array.isArray(rd.factors) && Array.isArray(rd.inputsUsed));
+  assert.match(rd.disclaimer, /not a medical/i, 'is explicit it is not a medical assessment');
+});
+
+test('performance: race predictor extrapolates 2k/5k/6k with a confidence interval, or asks for data', async () => {
+  const withBest = await makeUser('predict@test.com', 'rower', { best2kSeconds: 400 });
+  const p = await req('/performance/predictions', { token: withBest.token });
+  assert.equal(p.status, 200);
+  assert.equal(p.body.predictions.available, true);
+  const preds = p.body.predictions.predictions;
+  assert.equal(preds.length, 3);
+  const twoK = preds.find(x => x.distance === 2000);
+  const sixK = preds.find(x => x.distance === 6000);
+  assert.ok(twoK.timeS > 0 && twoK.split && twoK.range.includes('–'));
+  // Longer pieces are slower per 500m (fatigue) — the model must reflect that.
+  assert.ok(sixK.splitS > twoK.splitS, '6k split is slower than 2k split');
+  assert.ok(['high', 'medium', 'low'].includes(p.body.predictions.confidence));
+  assert.ok(Array.isArray(p.body.predictions.basis) && p.body.predictions.disclaimer);
+
+  // No 2k and no rows → predictor asks for data rather than inventing a number.
+  const empty = await makeUser('nopredict@test.com');
+  const pe = await req('/performance/predictions', { token: empty.token });
+  assert.equal(pe.body.predictions.available, false);
+  assert.ok(pe.body.predictions.reason);
+});
+
+test('performance: /summary returns readiness and predictions together', async () => {
+  const u = await makeUser('perfsummary@test.com', 'rower', { best2kSeconds: 410 });
+  const r = await req('/performance/summary', { token: u.token });
+  assert.equal(r.status, 200);
+  assert.ok(r.body.readiness && r.body.predictions);
+});
+
 test.after(() => { server.close(); });

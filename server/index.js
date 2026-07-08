@@ -48,6 +48,7 @@ import { socialRouter } from './social.js';
 import { groupsRouter } from './groups.js';
 import { progressRouter } from './progress.js';
 import { trainingRouter } from './training.js';
+import { performanceRouter } from './performance.js';
 import { aiRouter } from './aiRouter.js';
 import { adminRouter } from './admin.js';
 import { csrfProtection } from './cookies.js';
@@ -116,6 +117,7 @@ export function createApp() {
   app.use('/api/groups', groupsRouter);
   app.use('/api/me', progressRouter);
   app.use('/api/training', trainingRouter);
+  app.use('/api/performance', performanceRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/admin', adminRouter);
 
