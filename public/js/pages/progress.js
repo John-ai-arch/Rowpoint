@@ -31,8 +31,11 @@ export async function renderProgress(el) {
 
   el.innerHTML = `
     <header class="mb">
-      <h1>${esc(t('progress.title'))}</h1>
-      <p class="muted">${esc(t('progress.subtitle'))}</p>
+      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+        <div><h1>${esc(t('progress.title'))}</h1>
+          <p class="muted">${esc(t('progress.subtitle'))}</p></div>
+        <a class="btn secondary sm" href="#/plan">🗓 ${esc(t('plan.open'))}</a>
+      </div>
     </header>
 
     ${insightHtml(data, remaining, goalPct)}

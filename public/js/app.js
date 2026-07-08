@@ -6,6 +6,7 @@ import { renderAuth } from './pages/auth.js';
 import { renderDashboard } from './pages/dashboard.js';
 import { renderRow } from './pages/row.js';
 import { renderProgress } from './pages/progress.js';
+import { renderPlan } from './pages/plan.js';
 import { renderHistory } from './pages/history.js';
 import { renderWorkoutDetail } from './pages/workoutDetail.js';
 import { renderBuilder } from './pages/builder.js';
@@ -25,6 +26,7 @@ const routes = [
   { re: /^\/login/, page: renderAuth, public: true },
   { re: /^\/row/, page: renderRow, tab: 'row' },
   { re: /^\/progress/, page: renderProgress, tab: 'progress' },
+  { re: /^\/plan/, page: renderPlan, tab: 'progress' },
   { re: /^\/history$/, page: renderHistory, tab: 'history' },
   { re: /^\/workout\/([\w-]+)/, page: renderWorkoutDetail, tab: 'history' },
   { re: /^\/builder/, page: renderBuilder, tab: 'row' },

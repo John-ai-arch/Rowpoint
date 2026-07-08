@@ -402,6 +402,20 @@ ensureColumn('users', 'research_share_demographics', 'research_share_demographic
 // new goals subsystem.
 ensureColumn('users', 'goal_weekly_meters', 'goal_weekly_meters INTEGER');
 
+// Athlete profile (Adaptive Training Intelligence). Extends the existing goal
+// fields rather than introducing a parallel profile table — the coach + plan
+// generator read these alongside best_2k_seconds / goal_* already present.
+ensureColumn('users', 'height_cm', 'height_cm REAL');
+ensureColumn('users', 'experience_level', 'experience_level TEXT');            // beginner|intermediate|advanced|elite
+ensureColumn('users', 'goal_2k_seconds', 'goal_2k_seconds REAL');             // TARGET 2k (best_2k_seconds is current)
+ensureColumn('users', 'preferred_race_distance', 'preferred_race_distance TEXT'); // 2000m|5000m|6000m|head|marathon
+ensureColumn('users', 'available_days', 'available_days INTEGER');            // training days/week available
+ensureColumn('users', 'session_minutes', 'session_minutes INTEGER');         // typical minutes available per session
+ensureColumn('users', 'preferred_workout_types', 'preferred_workout_types TEXT'); // JSON array
+ensureColumn('users', 'injury_history', 'injury_history TEXT');
+ensureColumn('users', 'club', 'club TEXT');
+ensureColumn('users', 'boat_class', 'boat_class TEXT');
+
 // AI coach recommendations: generation source (llm | analysis_engine |
 // guardrail), model confidence, and adherence tracking (followed is set when
 // a workout lands on the recommendation's date).
@@ -570,6 +584,35 @@ for (const g of db.prepare('SELECT id FROM groups WHERE invite_code IS NULL').al
   db.prepare('UPDATE groups SET invite_code = ? WHERE id = ?').run(`G${code}`, g.id);
 }
 
+/* -------------------- adaptive training plans --------------------
+   A periodized, multi-week plan generated from the athlete's goal race + date
+   and current fitness. The week-by-week structure lives in weeks_json (phase,
+   target volume, session mix, prescriptions); adaptations (load changes driven
+   by real training) are appended to adaptations_json with their reasoning so
+   the athlete always sees WHY the plan changed. One active plan per user. */
+db.exec(`
+CREATE TABLE IF NOT EXISTS training_plans (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  goal_event TEXT,
+  goal_date TEXT,
+  goal_2k_seconds REAL,
+  target_weekly_meters INTEGER,
+  total_weeks INTEGER NOT NULL,
+  start_date TEXT NOT NULL,
+  weeks_json TEXT NOT NULL,
+  adaptations_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived','completed')),
+  coach_id TEXT,
+  coach_note TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  adapted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_training_plans_user ON training_plans(user_id, status);
+`);
+
 /* -------------------- database identity & boot tracking --------------------
    One row of instance metadata lets the app (and the admin System tab) prove
    whether storage is actually persistent: the instance id and created_at
@@ -599,7 +642,7 @@ metaSet('last_boot_at', Math.floor(Date.now() / 1000));
    gate for any *destructive* future migration (which must branch on the stored
    version rather than run unconditionally). Bump it whenever the schema
    changes. */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const priorSchema = Number(metaGet('schema_version') || 0);
 if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
 export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };

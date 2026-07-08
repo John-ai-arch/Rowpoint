@@ -1200,4 +1200,94 @@ test('analytics is owner-only (RBAC)', async () => {
   assert.equal((await req('/admin/analytics', { token: rower.token })).status, 403);
 });
 
+/* ---------------- adaptive training intelligence ---------------- */
+
+test('training: athlete profile round-trips and validates', async () => {
+  resetRateLimits();
+  const u = await makeUser('athlete@test.com');
+  const patched = await req('/training/profile', { method: 'PATCH', token: u.token, body: {
+    experienceLevel: 'advanced', availableDays: 5, goal2kSeconds: 400,
+    preferredRaceDistance: '2000m', club: 'RowPoint RC', boatClass: '1x',
+  } });
+  assert.equal(patched.status, 200);
+  assert.equal(patched.body.profile.experienceLevel, 'advanced');
+  assert.equal(patched.body.profile.availableDays, 5);
+  assert.equal(patched.body.profile.goal2kSeconds, 400);
+  const got = await req('/training/profile', { token: u.token });
+  assert.equal(got.body.profile.club, 'RowPoint RC');
+  assert.equal((await req('/training/profile', { method: 'PATCH', token: u.token, body: { experienceLevel: 'legendary' } })).status, 400);
+});
+
+test('training: generating a periodized plan builds a full phase progression ending on race week', async () => {
+  const u = await makeUser('planner@test.com');
+  const future = new Date(Date.now() + 16 * 7 * 86400 * 1000).toISOString().slice(0, 10);
+  const r = await req('/training/plan', { method: 'POST', token: u.token, body: { goalEvent: 'Spring 2k', goalDate: future, availableDays: 5, targetWeeklyMeters: 60000 } });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const p = r.body.plan;
+  assert.ok(p.totalWeeks >= 14 && p.totalWeeks <= 17, `weeks=${p.totalWeeks}`);
+  assert.equal(p.weeks.length, p.totalWeeks);
+  const phases = [...new Set(p.weeks.map(w => w.phase))];
+  assert.ok(phases.includes('base') && phases.includes('build') && phases.includes('taper'));
+  assert.equal(p.weeks[p.totalWeeks - 1].phase, 'race', 'plan ends on race week');
+  assert.equal(p.currentPhase.key, 'base', 'starts in the base phase');
+  assert.ok(p.weeks[0].sessions.length >= 2 && p.weeks[0].sessions[0].prescription, 'weeks carry concrete sessions');
+  assert.ok(r.body.rationale.includes('week'), 'includes a plain-language rationale');
+
+  const got = await req('/training/plan', { token: u.token });
+  assert.equal(got.body.plan.id, p.id, 'the plan is retrievable');
+
+  // A second plan archives the first; only one active plan at a time.
+  const r2 = await req('/training/plan', { method: 'POST', token: u.token, body: { goalEvent: 'Head race', weeks: 8 } });
+  assert.equal(r2.body.plan.totalWeeks, 8);
+  assert.notEqual(r2.body.plan.id, p.id);
+  assert.equal((await req('/training/plan', { token: u.token })).body.plan.id, r2.body.plan.id);
+});
+
+test('training: a goal date in the past is rejected', async () => {
+  const u = await makeUser('pastdate@test.com');
+  const past = new Date(Date.now() - 7 * 86400 * 1000).toISOString().slice(0, 10);
+  const r = await req('/training/plan', { method: 'POST', token: u.token, body: { goalEvent: 'x', goalDate: past } });
+  assert.equal(r.status, 400);
+  assert.equal(r.body.error, 'bad_goal_date');
+});
+
+test('training: plan adaptation returns explained decisions and never edits past weeks', async () => {
+  const u = await makeUser('adaptuser@test.com');
+  await req('/training/plan', { method: 'POST', token: u.token, body: { goalEvent: 'race', weeks: 12, availableDays: 5 } });
+  const r = await req('/training/plan/adapt', { method: 'POST', token: u.token });
+  assert.equal(r.status, 200);
+  assert.ok('adapted' in r.body && Array.isArray(r.body.decisions));
+  // A brand-new athlete with no recent sessions is "behind" → expect a scaled-back
+  // next week carrying a scientific reason.
+  assert.ok(r.body.decisions.length >= 1, 'adapts to the athlete having no recent training');
+  assert.ok(r.body.decisions[0].reason.length > 15, 'every decision explains itself');
+  assert.ok(r.body.decisions.every(d => d.weekIndex >= r.body.plan.currentWeekIndex), 'only future weeks change');
+});
+
+test('training: adapting with no active plan 404s', async () => {
+  const u = await makeUser('noplanuser@test.com');
+  assert.equal((await req('/training/plan/adapt', { method: 'POST', token: u.token })).status, 404);
+});
+
+test('training: weekly and monthly reviews are generated with strengths/focus/recommendations', async () => {
+  const u = await makeUser('reviewuser@test.com');
+  const w = await req('/training/weekly-review', { token: u.token });
+  assert.equal(w.status, 200);
+  assert.ok(w.body.review.summary && Array.isArray(w.body.review.focusNextWeek) && Array.isArray(w.body.review.strengths));
+  const m = await req('/training/monthly-review', { token: u.token });
+  assert.equal(m.status, 200);
+  assert.ok(m.body.review.summary && Array.isArray(m.body.review.recommendations));
+  assert.ok('aerobicDevelopment' in m.body.review && 'anaerobicDevelopment' in m.body.review);
+});
+
+test('training: current phase is available from the plan or inferred from the race date', async () => {
+  const u = await makeUser('phaseuser@test.com');
+  const noPlan = await req('/training/phase', { token: u.token });
+  assert.equal(noPlan.status, 200); // 'none' or inferred — either is valid
+  await req('/training/plan', { method: 'POST', token: u.token, body: { goalEvent: 'race', weeks: 20, availableDays: 4 } });
+  const withPlan = await req('/training/phase', { token: u.token });
+  assert.equal(withPlan.body.source, 'plan');
+  assert.ok(withPlan.body.phase.label);
+});
+
 test.after(() => { server.close(); });
