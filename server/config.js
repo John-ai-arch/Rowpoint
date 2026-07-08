@@ -34,6 +34,16 @@ export const config = {
   // Separate secret for deriving pseudonymous research IDs (§5.2), so a leak
   // of one secret never links the research corpus to account IDs.
   researchSecret: process.env.ROWPOINT_RESEARCH_SECRET || persistedSecret('research_secret'),
+  // Dedicated key for encrypting database backups at rest (AES-256-GCM). Set it
+  // as an env var if backups are shipped off-box, so a stolen disk snapshot
+  // can't decrypt them with a secret that lived on the same disk.
+  backupSecret: process.env.ROWPOINT_BACKUP_KEY || persistedSecret('backup_key'),
+
+  // Automated encrypted backups (server/backup.js).
+  backupDir: process.env.ROWPOINT_BACKUP_DIR || path.join(DATA_DIR, 'backups'),
+  backupIntervalHours: Number(process.env.ROWPOINT_BACKUP_INTERVAL_HOURS || 24),
+  backupRetention: Number(process.env.ROWPOINT_BACKUP_RETENTION || 14),
+  backupsEnabled: process.env.ROWPOINT_BACKUPS_ENABLED !== '0',
 
   tokenTtlSeconds: 60 * 60 * 24 * 30, // 30 days
   verificationTtlSeconds: 60 * 60 * 24, // 24 h to use an email code

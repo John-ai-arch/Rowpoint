@@ -9,7 +9,11 @@
   "scripts": {
     "test": "node --no-warnings --test tests/unit.test.js tests/api.test.js tests/realtime.test.js",
     "start": "node server/index.js",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "backup": "node server/backup.js create",
+    "backup:list": "node server/backup.js list",
+    "backup:verify": "node server/backup.js verify",
+    "backup:restore": "node server/backup.js restore"
   },
   "keywords": [],
   "author": "",

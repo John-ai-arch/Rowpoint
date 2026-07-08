@@ -9,6 +9,7 @@ import fs from 'node:fs';
 const DIR = `/tmp/rowpoint-api-${process.pid}`;
 fs.rmSync(DIR, { recursive: true, force: true });
 process.env.ROWPOINT_DATA_DIR = DIR;
+process.env.ROWPOINT_BACKUPS_ENABLED = '0'; // don't run the nightly timer under test (endpoints still work)
 delete process.env.ANTHROPIC_API_KEY;
 
 const { startServer } = await import('../server/index.js');
@@ -1145,6 +1146,58 @@ test('password recovery: reset codes are rate-limited', async () => {
   }
   assert.equal(last.status, 429, 'reset attempts are throttled');
   resetRateLimits();
+});
+
+/* ---------------- automated encrypted backups ---------------- */
+
+test('backups: admin can create an encrypted backup, list it, and verify its integrity', async () => {
+  const create = await req('/admin/backups', { method: 'POST', token: admin.token });
+  assert.equal(create.status, 201);
+  assert.ok(create.body.backup.file.endsWith('.db.enc'), 'backup is the encrypted artifact');
+  assert.ok(create.body.backup.sha256 && create.body.backup.plaintextBytes > 0);
+  assert.ok(create.body.backup.users >= 1, 'manifest records user count');
+
+  const list = await req('/admin/backups', { token: admin.token });
+  assert.equal(list.status, 200);
+  assert.equal(list.body.policy.retention, 14);
+  assert.ok(list.body.backups.some(b => b.file === create.body.backup.file));
+
+  const verify = await req(`/admin/backups/${encodeURIComponent(create.body.backup.file)}/verify`, { method: 'POST', token: admin.token });
+  assert.equal(verify.status, 200);
+  assert.equal(verify.body.verify.ok, true, 'GCM auth + SHA-256 match');
+  assert.equal(verify.body.verify.sha256, create.body.backup.sha256);
+});
+
+test('backups: the encrypted artifact is not a readable SQLite file at rest', async () => {
+  const c = await req('/admin/backups', { method: 'POST', token: admin.token });
+  const enc = fs.readFileSync(`${DIR}/backups/${c.body.backup.file}`);
+  assert.equal(enc.subarray(0, 4).toString(), 'RPBK', 'has the encrypted-format marker');
+  assert.notEqual(enc.subarray(0, 16).toString('utf8'), 'SQLite format 3 ', 'is NOT a plaintext SQLite header');
+});
+
+test('backups are owner-only (RBAC)', async () => {
+  assert.equal((await req('/admin/backups', { method: 'POST', token: rower.token })).status, 403);
+  assert.equal((await req('/admin/backups', { token: rower.token })).status, 403);
+});
+
+/* ---------------- developer analytics ---------------- */
+
+test('analytics: admin gets aggregate product metrics (DAU/WAU/MAU, funnel, adoption) and no PII', async () => {
+  const r = await req('/admin/analytics', { token: admin.token });
+  assert.equal(r.status, 200);
+  const a = r.body.analytics;
+  assert.ok(a.users.total >= 3, 'counts existing accounts');
+  assert.ok(typeof a.users.dau === 'number' && typeof a.users.wau === 'number' && typeof a.users.mau === 'number');
+  assert.ok(a.engagement && typeof a.engagement.totalWorkouts === 'number');
+  assert.ok(a.featureAdoption && typeof a.featureAdoption.loggedWorkout === 'number');
+  assert.ok(a.funnel && 'verificationRatePct' in a.funnel);
+  assert.ok(a.reliability && 'bleErrors30d' in a.reliability);
+  // Aggregate-only: the payload must not carry per-user identifiers.
+  assert.ok(!JSON.stringify(a).includes('@'), 'no emails leak into analytics');
+});
+
+test('analytics is owner-only (RBAC)', async () => {
+  assert.equal((await req('/admin/analytics', { token: rower.token })).status, 403);
 });
 
 test.after(() => { server.close(); });

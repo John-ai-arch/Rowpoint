@@ -7,7 +7,7 @@ export async function renderAdmin(el) {
     el.innerHTML = '<div class="notice warn">Admin access requires the Admin role.</div>';
     return;
   }
-  const TABS = ['Overview', 'AI', 'Users', 'Research', 'System', 'Security', 'Moderation', 'Broadcast', 'Audit'];
+  const TABS = ['Overview', 'Analytics', 'AI', 'Users', 'Research', 'System', 'Security', 'Moderation', 'Broadcast', 'Audit'];
   el.innerHTML = `<h1>Admin</h1>
     <div class="seg mb" id="tabs" style="flex-wrap:wrap">
       ${TABS.map((t, i) => `<button data-tab="${t.toLowerCase()}" class="${i === 0 ? 'on' : ''}">${t}</button>`).join('')}
@@ -25,6 +25,7 @@ export async function renderAdmin(el) {
     body.innerHTML = '<p class="muted">Loading…</p>';
     try {
       if (tab === 'overview') return await showOverview();
+      if (tab === 'analytics') return await showAnalytics();
       if (tab === 'ai') return await showAi();
       if (tab === 'users') return await showUsers();
       if (tab === 'research') return await showResearch();
@@ -297,9 +298,77 @@ export async function renderAdmin(el) {
 
   /* ================= SYSTEM ================= */
 
+  /* ================= ANALYTICS (aggregate product metrics) ================= */
+
+  async function showAnalytics() {
+    const { analytics: a } = await api('/admin/analytics');
+    const pct = (v) => (v === null || v === undefined ? '–' : `${v}%`);
+    const bar = (label, v) => `<div style="display:flex;align-items:center;margin:6px 0"><span class="small" style="width:9.5rem">${esc(label)}</span>
+      <div class="pbar" style="flex:1;margin:0 8px"><span style="width:${Math.max(0, Math.min(100, v || 0))}%"></span></div>
+      <strong class="small">${pct(v)}</strong></div>`;
+    const maxSignup = Math.max(1, ...a.growth.signupsByDay.map(d => d.n));
+    body.innerHTML = `
+      <p class="muted small">Aggregate product analytics — no personally identifying data. Separate from the research dataset.</p>
+      <div class="grid cols3">
+        ${tile(a.users.dau, 'daily active (DAU)')}
+        ${tile(a.users.wau, 'weekly active (WAU)')}
+        ${tile(a.users.mau, 'monthly active (MAU)')}
+        ${tile(a.users.total, 'total accounts')}
+        ${tile(pct(a.users.stickiness), 'stickiness (DAU/MAU)')}
+        ${tile(pct(a.growth.retention7of30Pct), '7d retention (of 8–30d cohort)')}
+      </div>
+      <div class="grid cols2">
+        <div class="card tight"><h3>Engagement</h3>
+          <div class="grid cols2">
+            ${tile(a.engagement.totalWorkouts, 'workouts logged')}
+            ${tile(a.engagement.workouts7d, 'workouts / 7d')}
+            ${tile(a.engagement.avgWorkoutsPerActiveUser, 'avg workouts / active user')}
+            ${tile(fmtDuration(a.engagement.avgWorkoutDurationS), 'avg workout duration')}
+          </div></div>
+        <div class="card tight"><h3>Signup → verification funnel (30d)</h3>
+          <div class="grid cols2">
+            ${tile(a.funnel.signups30d, 'signups / 30d')}
+            ${tile(a.funnel.verifies30d, 'verified / 30d')}
+            ${tile(pct(a.funnel.verificationRatePct), 'verification rate')}
+            ${tile(a.ai.usersUsingAi, 'users using AI coach')}
+          </div></div>
+      </div>
+      <div class="grid cols2">
+        <div class="card tight"><h3>Feature adoption (% of accounts)</h3>
+          ${bar('Logged a workout', a.featureAdoption.loggedWorkout)}
+          ${bar('Joined a team', a.featureAdoption.joinedTeam)}
+          ${bar('Joined a group', a.featureAdoption.joinedGroup)}
+          ${bar('Logged wellness', a.featureAdoption.loggedWellness)}
+          ${bar('Used AI coach', a.featureAdoption.usedAiCoach)}
+          ${bar('Made a connection', a.featureAdoption.madeConnection)}
+          ${bar('Earned an achievement', a.featureAdoption.earnedAchievement)}</div>
+        <div class="card tight"><h3>Workout mix</h3>
+          <table><thead><tr><th>Machine</th><th>#</th></tr></thead><tbody>
+          ${a.workoutMix.machine.map(m => `<tr><td>${esc(m.type)}</td><td>${m.n}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No workouts yet</td></tr>'}
+          </tbody></table>
+          <p class="small muted mt">Coach-assigned: <strong>${a.workoutMix.assigned}</strong> · self-directed: <strong>${a.workoutMix.selfDirected}</strong></p>
+          <p class="small">AI adherence: <strong>${pct(a.ai.adherencePct)}</strong> (${a.ai.followed}/${a.ai.suggestions} recommendations followed)</p></div>
+      </div>
+      <div class="grid cols2">
+        <div class="card tight"><h3>New signups / day (30d)</h3>
+          ${a.growth.signupsByDay.length ? `<div style="display:flex;align-items:flex-end;gap:2px;height:68px">${a.growth.signupsByDay.map(d =>
+    `<div title="${esc(d.day)}: ${d.n}" style="flex:1;background:var(--accent);height:${Math.round((d.n / maxSignup) * 60) + 4}px;border-radius:2px 2px 0 0"></div>`).join('')}</div>`
+    : '<p class="muted small">No signups in the last 30 days.</p>'}</div>
+        <div class="card tight"><h3>Reliability (30d)</h3>
+          <div class="grid cols3">
+            ${['bleErrors30d', 'syncFailures30d', 'clientCrashes30d', 'apiErrors30d', 'backupFailures30d'].map(k => {
+      const n = a.reliability[k] || 0;
+      const label = k.replace('30d', '').replace(/([A-Z])/g, ' $1').toLowerCase();
+      return `<div class="stat-tile tight"><div class="n" style="color:${n ? 'var(--warn)' : 'var(--good)'}">${n}</div><div class="l">${esc(label)}</div></div>`;
+    }).join('')}
+          </div>
+          <p class="small muted mt">${a.reliability.workouts30d} workouts synced in the same window.</p></div>
+      </div>`;
+  }
+
   async function showSystem() {
-    const [{ system: sys }, { last7d, recent }, { stats: dbs }] = await Promise.all([
-      api('/admin/system'), api('/admin/health'), api('/admin/db-stats'),
+    const [{ system: sys }, { last7d, recent }, { stats: dbs }, backupData] = await Promise.all([
+      api('/admin/system'), api('/admin/health'), api('/admin/db-stats'), api('/admin/backups'),
     ]);
     const b = sys.backend, d = sys.database;
     const mb = (bytes) => `${(bytes / 1048576).toFixed(2)} MB`;
@@ -350,11 +419,47 @@ export async function renderAdmin(el) {
     return `<div class="stat-tile tight"><div class="n" style="color:${n ? 'var(--warn)' : 'var(--good)'}">${n}</div><div class="l">${k.replaceAll('_', ' ')}/7d</div></div>`;
   }).join('')}</div></div>
       </div>
+      <div class="card"><h3>Encrypted backups</h3>
+        <p class="small muted">Automated ${backupData.policy.enabled ? `every ${backupData.policy.intervalHours}h` : '<span class="badge amber">disabled</span>'} ·
+          retention ${backupData.policy.retention} · AES-256-GCM ·
+          key ${backupData.policy.keyFromEnv ? 'from env' : '<span class="badge amber">on disk only — set ROWPOINT_BACKUP_KEY</span>'} ·
+          last ${backupData.policy.lastBackupAt ? fmtDateTime(backupData.policy.lastBackupAt) : 'never'}</p>
+        <div class="row mb"><button class="sm" id="mkBackup">Back up now</button>
+          <span class="muted small">Restore is an operator CLI action: <code>npm run backup:restore &lt;file&gt;</code></span></div>
+        <div id="backupList">${backupsTable(backupData.backups)}</div></div>
       <div class="card"><h3>Recent error log</h3>
       ${recent.length ? `<table><thead><tr><th>When</th><th>Kind</th><th>Detail</th></tr></thead><tbody>
         ${recent.map(e => `<tr><td class="small">${fmtDateTime(e.created_at)}</td><td><span class="badge ${e.kind === 'ble_error' ? 'amber' : 'red'}">${esc(e.kind)}</span></td><td class="small">${esc(e.detail || '')}</td></tr>`).join('')}
       </tbody></table>` : '<p class="muted">Nothing logged. Quiet is good.</p>'}</div>`;
     body.querySelector('#backupBtn').onclick = dl('/admin/backup.db', 'rowpoint-backup.db');
+    body.querySelector('#mkBackup').onclick = async (ev) => {
+      ev.target.disabled = true; ev.target.textContent = 'Backing up…';
+      try {
+        await api('/admin/backups', { method: 'POST' });
+        const fresh = await api('/admin/backups');
+        body.querySelector('#backupList').innerHTML = backupsTable(fresh.backups);
+        toast('Encrypted backup created.', 'success');
+      } catch (e) { toast(e.message, 'error'); }
+      ev.target.disabled = false; ev.target.textContent = 'Back up now';
+    };
+    body.querySelectorAll('[data-verify]').forEach(b => b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await api(`/admin/backups/${encodeURIComponent(b.dataset.verify)}/verify`, { method: 'POST' });
+        toast(r.verify.ok ? 'Integrity verified ✓' : 'Integrity check FAILED', r.verify.ok ? 'success' : 'error');
+      } catch (e) { toast(e.message, 'error'); }
+      b.disabled = false;
+    });
+  }
+
+  function backupsTable(backups) {
+    if (!backups.length) return '<p class="muted small">No backups yet.</p>';
+    const kb = (n) => `${(n / 1024).toFixed(0)} KB`;
+    return `<table><thead><tr><th>Created</th><th>Reason</th><th>Size</th><th>Users</th><th>Schema</th><th></th></tr></thead><tbody>
+      ${backups.map(b => `<tr><td class="small">${fmtDateTime(b.createdAt)}</td><td class="small">${esc(b.reason || '')}</td>
+        <td class="small">${kb(b.plaintextBytes)}</td><td>${b.users}</td><td>v${b.schemaVersion}</td>
+        <td><button class="ghost sm" data-verify="${esc(b.file)}">Verify</button></td></tr>`).join('')}
+    </tbody></table>`;
   }
 
   /* ================= SECURITY ================= */

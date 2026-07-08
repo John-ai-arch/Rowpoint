@@ -50,6 +50,7 @@ import { progressRouter } from './progress.js';
 import { aiRouter } from './aiRouter.js';
 import { adminRouter } from './admin.js';
 import { csrfProtection } from './cookies.js';
+import { scheduleBackups } from './backup.js';
 import { attachRealtime } from './realtime.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -157,6 +158,7 @@ export function startServer(port = config.port) {
   const app = createApp();
   const server = http.createServer(app);
   attachRealtime(server);
+  scheduleBackups();
   return new Promise((resolve) => {
     server.listen(port, () => {
       console.log(`RowPoint listening on http://localhost:${server.address().port}`);

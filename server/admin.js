@@ -16,6 +16,8 @@ import { authRequired, adminRequired, audit, recordAuthEvent } from './middlewar
 import { metricsSnapshot } from './metrics.js';
 import { llmConfigured } from './ai/coach.js';
 import { mailConfigured } from './mailer.js';
+import { createBackup, listBackups, verifyBackup } from './backup.js';
+import { developerAnalytics } from './analytics.js';
 import { uuid, now, badRequest, ApiError, isEmail, safeJson, researchId, hashPassword } from './util.js';
 
 export const adminRouter = Router();
@@ -478,6 +480,45 @@ adminRouter.get('/backup.db', (req, res) => {
   try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);'); } catch { /* checkpoint is best-effort */ }
   audit(req.user.id, 'export.backup.db', null, null);
   res.download(path.resolve(config.dbFile), `rowpoint-backup-${todayCompact()}.db`);
+});
+
+/* ---- automated encrypted backups (server/backup.js) ---- */
+
+// List the retained encrypted backups + their manifests, plus current policy.
+adminRouter.get('/backups', (req, res) => {
+  const lastAt = Number(db.prepare("SELECT value FROM meta WHERE key = 'last_backup_at'").get()?.value || 0) || null;
+  res.json({
+    policy: {
+      enabled: config.backupsEnabled,
+      intervalHours: config.backupIntervalHours,
+      retention: config.backupRetention,
+      keyFromEnv: !!process.env.ROWPOINT_BACKUP_KEY,
+      lastBackupAt: lastAt,
+    },
+    backups: listBackups(),
+  });
+});
+
+// Trigger an on-demand encrypted backup now.
+adminRouter.post('/backups', (req, res) => {
+  const manifest = createBackup('manual-admin');
+  audit(req.user.id, 'backup.create', manifest.file, { users: manifest.users, bytes: manifest.plaintextBytes });
+  res.status(201).json({ backup: manifest });
+});
+
+// Integrity-check a backup (decrypt + verify GCM auth + SHA-256) without
+// restoring it. Restore itself is an operator CLI action (node server/backup.js
+// restore <file>) so it can never clobber a live DB from the web UI.
+adminRouter.post('/backups/:file/verify', (req, res) => {
+  const result = verifyBackup(req.params.file);
+  audit(req.user.id, 'backup.verify', req.params.file, { ok: result.ok });
+  res.json({ verify: result });
+});
+
+/* ---- developer / product analytics (aggregate-only, no PII) ---- */
+adminRouter.get('/analytics', (req, res) => {
+  audit(req.user.id, 'analytics.view', null, null);
+  res.json({ analytics: developerAnalytics() });
 });
 
 adminRouter.get('/db-stats', (req, res) => {

@@ -59,12 +59,36 @@ docker run -d -p 3000:3000 -v rowpoint-data:/data -e RESEND_API_KEY=re_xxx rowpo
 ```
 Put Caddy or nginx in front for HTTPS (Caddyfile: `yourdomain.com { reverse_proxy localhost:3000 }`).
 
+## Encrypted backups (automatic)
+
+The server takes an **automatic encrypted backup every night** (SQLite
+`VACUUM INTO` → AES-256-GCM), keeps the most recent 14, and stores them in
+`ROWPOINT_DATA_DIR/backups`. Each backup has a manifest with a SHA-256 and the
+user count; a failed backup is logged and surfaced on the admin dashboard.
+
+- **Set `ROWPOINT_BACKUP_KEY`** to a long random string in your host env if you
+  copy backups off-box, so a stolen backup can't be decrypted with a key that
+  lived on the same disk. (Optional knobs: `ROWPOINT_BACKUP_DIR`,
+  `ROWPOINT_BACKUP_INTERVAL_HOURS`, `ROWPOINT_BACKUP_RETENTION`,
+  `ROWPOINT_BACKUPS_ENABLED=0` to disable.)
+- **Manage from the admin System tab**: back up on demand and verify integrity.
+- **Operator CLI** (run in the app dir with the same `ROWPOINT_DATA_DIR`):
+  ```bash
+  npm run backup            # create one now
+  npm run backup:list       # list backups + manifests
+  npm run backup:verify <file>   # decrypt + check GCM auth and SHA-256
+  npm run backup:restore <file> [dest]   # decrypt to <dest> (default rowpoint.db.restored)
+  ```
+  To restore: stop the server, `npm run backup:restore <file>`, move the
+  resulting file over `rowpoint.db`, and start the server.
+
 ## After deploy — 3-minute check
 
 1. Open the URL on your phone → sign up → the code arrives by email → verify.
 2. Browser menu → **Add to Home Screen** → RowPoint opens full-screen as an app.
 3. Sign in as `lambert.venema2027@gmail.com` (verified) → Admin dashboard appears.
-4. Back up the SQLite file (`rowpoint.db` in the data dir) on a schedule.
+4. Confirm the **System tab → Encrypted backups** panel shows a recent backup
+   (and set `ROWPOINT_BACKUP_KEY` so off-box copies stay encrypted).
 
 Optional variables: `ANTHROPIC_API_KEY` (enables the LLM coach — Claude
 reasons over each athlete's training history for daily recommendations;
