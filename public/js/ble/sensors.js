@@ -36,6 +36,41 @@ export const SensorState = {
 };
 
 /**
+ * Structured Web-Bluetooth support detection (no i18n here — the UI layer
+ * composes translated messages from these codes). Never assumes Bluetooth
+ * exists; identifies WHY it's unavailable so we can give an honest, specific
+ * explanation per browser instead of a generic error.
+ * @returns {{ supported:boolean, browser:'ios'|'apple'|'firefox'|'chromium'|'other', secure:boolean }}
+ */
+export function bluetoothSupportInfo() {
+  const supported = typeof navigator !== 'undefined' && !!navigator.bluetooth;
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  const isIOS = /iPad|iPhone|iPod/.test(ua)
+    || (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isFirefox = /firefox|fxios/i.test(ua);
+  const isSafari = /safari/i.test(ua) && !/chrome|chromium|crios|edg|opr|android/i.test(ua);
+  const isChromium = /chrome|chromium|crios|edg|opr/i.test(ua) && !isFirefox;
+  let browser = 'other';
+  if (isIOS) browser = 'ios';
+  else if (isSafari) browser = 'apple';
+  else if (isFirefox) browser = 'firefox';
+  else if (isChromium) browser = 'chromium';
+  const secure = typeof window === 'undefined' ? true : window.isSecureContext !== false;
+  return { supported, browser, secure };
+}
+
+/**
+ * Ask the browser whether a Bluetooth adapter is actually present & powered
+ * (Chrome implements getAvailability). Distinguishes "browser has no Web
+ * Bluetooth" from "adapter off". Returns true/false, or null when unknown.
+ */
+export async function bluetoothAvailability() {
+  if (typeof navigator === 'undefined' || !navigator.bluetooth) return false;
+  if (typeof navigator.bluetooth.getAvailability !== 'function') return null;
+  try { return await navigator.bluetooth.getAvailability(); } catch { return null; }
+}
+
+/**
  * Decode a Heart Rate Measurement packet per the Bluetooth SIG Heart Rate
  * Profile. Handles: flags byte, 8/16-bit BPM, energy-expended field, RR
  * intervals (multiple), and gracefully ignores anything it doesn't know.

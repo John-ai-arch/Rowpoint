@@ -2,8 +2,11 @@
 // live metrics, per-stroke force curve, HR strap, live team streaming and
 // live leaderboard, then offline-first save with AI pacing feedback.
 import { api, state, toast, esc, fmtSplit, fmtDuration, uuidv4 } from '../api.js';
+import { t } from '../i18n.js';
+import { celebrate } from '../celebrate.js';
 import { ergManager, ConnState } from '../ble/ergSource.js';
 import { hrManager, SensorState } from '../ble/sensors.js';
+import { bluetoothHelpHtml } from '../ble/support.js';
 import { drawForceCurve } from '../components/charts.js';
 import { queueWorkout, syncPending } from '../offline.js';
 import { subscribe, unsubscribe, publishMetrics, onRealtime } from '../ws.js';
@@ -79,15 +82,20 @@ export async function renderRow(el) {
     const c = el.querySelector('#connBtns');
     if (!c) return;
     if (ergManager.adapter) {
-      c.innerHTML = `<button class="sm danger" id="disconnectBtn">Disconnect</button>`;
+      c.innerHTML = `<button class="sm danger" id="disconnectBtn">${esc(t('ble.disconnect'))}</button>`;
       el.querySelector('#disconnectBtn').onclick = () => endSession(true);
     } else {
       const remembered = ergManager.rememberedMachine();
-      const canSilent = remembered?.deviceId && remembered.kind !== 'simulator' && navigator.bluetooth?.getDevices;
+      const btAvailable = ergManager.bluetoothAvailable();
+      const canSilent = btAvailable && remembered?.deviceId && remembered.kind !== 'simulator' && navigator.bluetooth?.getDevices;
+      // Honest per-browser explainer when Web Bluetooth isn't available — the
+      // simulator still exposes every feature, so it stays offered.
+      const errBox = el.querySelector('#connError');
+      if (!btAvailable && errBox && !errBox.dataset.btHelp) { errBox.innerHTML = bluetoothHelpHtml({ showSimulator: true }); errBox.dataset.btHelp = '1'; }
       c.innerHTML = `
         ${canSilent ? `<button class="sm secondary" id="reconnectBtn">↻ ${esc(remembered.name || 'Last machine')}</button>` : ''}
-        <button class="sm" id="connectBtn">Connect erg</button>
-        <button class="sm secondary" id="simBtn">Simulator</button>`;
+        ${btAvailable ? `<button class="sm" id="connectBtn">${esc(t('ble.connectErg'))}</button>` : ''}
+        <button class="sm secondary" id="simBtn">${esc(t('ble.simulator'))}</button>`;
       el.querySelector('#reconnectBtn')?.addEventListener('click', async () => {
         const adapter = await ergManager.reconnectRemembered();
         if (!adapter) { toast('Couldn\'t silently reach the last machine — pick it from the list instead.', 'info'); connect('auto'); return; }
@@ -98,7 +106,7 @@ export async function renderRow(el) {
         if (session.channel) joinLive();
         connButtons(); renderLiveShell(); updateConnState();
       });
-      el.querySelector('#connectBtn').onclick = () => connect('auto');
+      el.querySelector('#connectBtn')?.addEventListener('click', () => connect('auto'));
       el.querySelector('#simBtn').onclick = () => pickSimProfile();
     }
   }
@@ -339,12 +347,17 @@ export async function renderRow(el) {
       const key = `rp_queue_${state.user.id}`;
       const q = JSON.parse(localStorage.getItem(key) || '[]').filter(x => x.payload.id !== payload.id);
       localStorage.setItem(key, JSON.stringify(q));
+      // Celebrate any achievements this workout just unlocked (toast + chime +
+      // an in-card banner). No-op when nothing new was earned.
+      const badgeBanner = celebrate(res.newBadges);
       after.innerHTML = `<div class="card ai-card">
         <div class="row between"><h3>Workout saved</h3><span class="ai-tag">✨ AI-generated feedback</span></div>
         ${res.newPb ? `<p><span class="badge green">New verified 2k PB!</span></p>` : ''}
         <p>${esc(res.aiFeedback?.text || '')}</p>
+        ${badgeBanner}
         <div class="row">
           <a class="btn secondary sm" href="#/workout/${payload.id}">Full breakdown</a>
+          <a class="btn ghost sm" href="#/progress">Progress</a>
           ${assignmentId ? `<a class="btn ghost sm" href="#/live/${assignmentId}">Final leaderboard</a>` : ''}
         </div></div>`;
       if (res.research?.contributed) toast('Anonymized data contributed to research — thank you! (Opt out anytime in Settings.)', 'info', 5000);

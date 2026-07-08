@@ -7,6 +7,7 @@
 // exists when GOOGLE_CLIENT_ID is configured (real Google Identity Services
 // flow); nothing renders for unconfigured providers.
 import { api, setSession, toast, esc } from '../api.js';
+import { t } from '../i18n.js';
 
 let providers = null; // { google, googleClientId, apple, devMail }
 
@@ -24,14 +25,14 @@ export async function renderAuth(el) {
   function draw() {
     el.innerHTML = `<div class="auth-wrap">
       <div class="center mb">
-        <div class="brand" style="justify-content:center;font-size:1.6rem"><span class="dot"></span> RowPoint</div>
-        <p class="muted">Train. Connect. Contribute.</p>
+        <div class="brand" style="justify-content:center;font-size:1.7rem"><span class="dot"></span> RowPoint</div>
+        <p class="muted">${esc(t('common.tagline'))}</p>
       </div>
       <div class="card">${mode === 'login' ? loginHtml() : signupHtml()}</div>
       <p class="center muted small">
         ${mode === 'login'
-    ? `New to RowPoint? <a href="#" id="swap">Create an account</a>`
-    : `Already have an account? <a href="#" id="swap">Sign in</a>`}
+    ? `${esc(t('auth.newHere'))} <a href="#" id="swap">${esc(t('auth.createAccount'))}</a>`
+    : `${esc(t('auth.haveAccount'))} <a href="#" id="swap">${esc(t('auth.signIn'))}</a>`}
       </p>
     </div>`;
     wire();
@@ -46,64 +47,62 @@ export async function renderAuth(el) {
   };
 
   const loginHtml = () => `
-    <h2>Sign in</h2>
-    <label class="field"><span>Email</span><input id="email" type="email" autocomplete="email" value="${esc(data.email || '')}"></label>
-    <label class="field"><span>Password</span><input id="password" type="password" autocomplete="current-password"></label>
-    <button id="loginBtn" style="width:100%">Sign in</button>
+    <h2>${esc(t('auth.signIn'))}</h2>
+    <label class="field"><span>${esc(t('auth.email'))}</span><input id="email" type="email" autocomplete="email" value="${esc(data.email || '')}"></label>
+    <label class="field"><span>${esc(t('auth.password'))}</span><input id="password" type="password" autocomplete="current-password"></label>
+    <button id="loginBtn" style="width:100%">${esc(t('auth.signInCta'))}</button>
     ${oauthButtonsHtml()}`;
 
   function signupHtml() {
     const dots = `<div class="step-dots">${[1, 2, 3].map(i => `<span class="d ${i <= step ? 'on' : ''}"></span>`).join('')}</div>`;
-    if (step === 1) return `${dots}<h2>Create your account</h2>
-      <label class="field"><span>I am a…</span>
+    if (step === 1) return `${dots}<h2>${esc(t('auth.createAccount'))}</h2>
+      <label class="field"><span>${esc(t('auth.iAmA'))}</span>
         <div class="seg" role="radiogroup">
-          <button type="button" data-type="rower" class="${data.accountType === 'rower' ? 'on' : ''}">Rower</button>
-          <button type="button" data-type="coach" class="${data.accountType === 'coach' ? 'on' : ''}">Coach</button>
+          <button type="button" data-type="rower" class="${data.accountType === 'rower' ? 'on' : ''}">${esc(t('auth.rower'))}</button>
+          <button type="button" data-type="coach" class="${data.accountType === 'coach' ? 'on' : ''}">${esc(t('auth.coach'))}</button>
         </div>
-        <p class="muted small">${data.accountType === 'coach'
-    ? 'Coaches get a shareable team code the moment the account is created.'
-    : 'Rowers can optionally join a coach\'s team with a team code — or train fully standalone.'}</p>
+        <p class="muted small">${data.accountType === 'coach' ? esc(t('auth.coachHint')) : esc(t('auth.rowerHint'))}</p>
       </label>
-      <label class="field"><span>Display name</span><input id="displayName" value="${esc(data.displayName || '')}"></label>
-      <label class="field"><span>Email</span><input id="email" type="email" value="${esc(data.email || '')}"></label>
-      <label class="field"><span>Password (min 8 characters)</span><input id="password" type="password" value="${esc(data.password || '')}"></label>
-      ${data.accountType === 'rower' ? `<label class="field"><span>Team code (optional)</span><input id="teamCode" placeholder="e.g. KX7M2PQ" value="${esc(data.teamCode || '')}"></label>` : ''}
-      <button id="next1" style="width:100%">Continue</button>
+      <label class="field"><span>${esc(t('auth.displayName'))}</span><input id="displayName" value="${esc(data.displayName || '')}"></label>
+      <label class="field"><span>${esc(t('auth.email'))}</span><input id="email" type="email" value="${esc(data.email || '')}"></label>
+      <label class="field"><span>${esc(t('auth.passwordMin'))}</span><input id="password" type="password" value="${esc(data.password || '')}"></label>
+      ${data.accountType === 'rower' ? `<label class="field"><span>${esc(t('auth.teamCodeOptional'))}</span><input id="teamCode" placeholder="e.g. KX7M2PQ" value="${esc(data.teamCode || '')}"></label>` : ''}
+      <button id="next1" style="width:100%">${esc(t('common.continue'))}</button>
       ${oauthButtonsHtml()}`;
 
-    if (step === 2) return `${dots}<h2>Profile & training goals</h2>
-      <p class="muted small">All optional and editable later — but your goals are what power the AI training assistant, so the more real they are, the better its suggestions.</p>
+    if (step === 2) return `${dots}<h2>${esc(t('onboarding.profileTitle'))}</h2>
+      <p class="muted small">${esc(t('onboarding.profileSub'))}</p>
       <div class="grid cols2">
-        <label class="field"><span>Birth year</span><input id="birthYear" type="number" min="1920" max="2020" value="${data.birthYear || ''}"></label>
-        <label class="field"><span>Weight (kg)</span><input id="weightKg" type="number" min="30" max="200" value="${data.weightKg || ''}"></label>
+        <label class="field"><span>${esc(t('onboarding.birthYear'))}</span><input id="birthYear" type="number" min="1920" max="2020" value="${data.birthYear || ''}"></label>
+        <label class="field"><span>${esc(t('onboarding.weightKg'))}</span><input id="weightKg" type="number" min="30" max="200" value="${data.weightKg || ''}"></label>
       </div>
-      <label class="field"><span>Best known 2k time (mm:ss, self-reported)</span><input id="best2k" placeholder="7:45" value="${esc(data.best2k || '')}"></label>
-      <label class="field"><span>Preferred units</span>
-        <select id="units"><option value="metric" ${data.units === 'metric' ? 'selected' : ''}>Metric</option><option value="imperial" ${data.units === 'imperial' ? 'selected' : ''}>Imperial</option></select></label>
-      <label class="field"><span>Primary goal</span>
+      <label class="field"><span>${esc(t('onboarding.best2k'))}</span><input id="best2k" placeholder="7:45" value="${esc(data.best2k || '')}"></label>
+      <label class="field"><span>${esc(t('onboarding.units'))}</span>
+        <select id="units"><option value="metric" ${data.units === 'metric' ? 'selected' : ''}>${esc(t('onboarding.metric'))}</option><option value="imperial" ${data.units === 'imperial' ? 'selected' : ''}>${esc(t('onboarding.imperial'))}</option></select></label>
+      <label class="field"><span>${esc(t('onboarding.primaryGoal'))}</span>
         <select id="goalType">
-          <option value="general_fitness" ${data.goalType === 'general_fitness' ? 'selected' : ''}>General fitness</option>
-          <option value="race_prep" ${data.goalType === 'race_prep' ? 'selected' : ''}>Race preparation</option>
-          <option value="weight_class" ${data.goalType === 'weight_class' ? 'selected' : ''}>Weight-class management</option>
-          <option value="return_from_injury" ${data.goalType === 'return_from_injury' ? 'selected' : ''}>Return from injury</option>
-          <option value="other" ${data.goalType === 'other' ? 'selected' : ''}>Other</option>
+          <option value="general_fitness" ${data.goalType === 'general_fitness' ? 'selected' : ''}>${esc(t('onboarding.goalGeneral'))}</option>
+          <option value="race_prep" ${data.goalType === 'race_prep' ? 'selected' : ''}>${esc(t('onboarding.goalRace'))}</option>
+          <option value="weight_class" ${data.goalType === 'weight_class' ? 'selected' : ''}>${esc(t('onboarding.goalWeight'))}</option>
+          <option value="return_from_injury" ${data.goalType === 'return_from_injury' ? 'selected' : ''}>${esc(t('onboarding.goalInjury'))}</option>
+          <option value="other" ${data.goalType === 'other' ? 'selected' : ''}>${esc(t('onboarding.goalOther'))}</option>
         </select></label>
       <div class="grid cols2">
-        <label class="field"><span>Target event (optional)</span><input id="goalTargetEvent" placeholder="Spring head race" value="${esc(data.goalTargetEvent || '')}"></label>
-        <label class="field"><span>Event date</span><input id="goalTargetDate" type="date" value="${data.goalTargetDate || ''}"></label>
+        <label class="field"><span>${esc(t('onboarding.targetEvent'))}</span><input id="goalTargetEvent" placeholder="Spring head race" value="${esc(data.goalTargetEvent || '')}"></label>
+        <label class="field"><span>${esc(t('onboarding.eventDate'))}</span><input id="goalTargetDate" type="date" value="${data.goalTargetDate || ''}"></label>
       </div>
-      <label class="field"><span>Desired sessions per week</span><input id="goalWeeklySessions" type="number" min="0" max="28" value="${data.goalWeeklySessions ?? 4}"></label>
-      <div class="row"><button class="secondary" id="back2">Back</button><button id="next2" style="flex:1">Continue</button></div>`;
+      <label class="field"><span>${esc(t('onboarding.weeklySessions'))}</span><input id="goalWeeklySessions" type="number" min="0" max="28" value="${data.goalWeeklySessions ?? 4}"></label>
+      <div class="row"><button class="secondary" id="back2">${esc(t('common.back'))}</button><button id="next2" style="flex:1">${esc(t('common.continue'))}</button></div>`;
 
-    return `${dots}<h2>Contributing to rowing research</h2>
+    return `${dots}<h2>${esc(t('onboarding.researchTitle'))}</h2>
       <div class="notice mb">
-        <p><strong>By default, RowPoint contributes your workout and daily wellness data — pseudonymized, never with your name or email — to an ongoing rowing-performance research dataset</strong> used across multiple studies.</p>
-        <p>You can opt out right here, or at any time later in Settings, with <strong>zero effect on any app feature</strong>. If you opt out later, no future data is contributed from that moment on; data contributed while you were opted in is retained in the research set (deleting your account removes it entirely).</p>
+        <p><strong>${esc(t('onboarding.researchBody'))}</strong></p>
+        <p>${esc(t('onboarding.researchBody2'))}</p>
       </div>
-      <div class="toggle"><div><strong>Contribute my workout and wellness data to research</strong></div>
+      <div class="toggle"><div><strong>${esc(t('onboarding.researchToggle'))}</strong></div>
         <label class="switch"><input type="checkbox" id="research" ${data.researchOptIn ? 'checked' : ''}><span class="sl"></span></label></div>
-      <p class="muted small">This is separate from what you share with teammates — team and group sharing has its own controls in Settings.</p>
-      <div class="row mt"><button class="secondary" id="back3">Back</button><button id="createBtn" style="flex:1">Create account</button></div>`;
+      <p class="muted small">${esc(t('onboarding.researchSeparate'))}</p>
+      <div class="row mt"><button class="secondary" id="back3">${esc(t('common.back'))}</button><button id="createBtn" style="flex:1">${esc(t('auth.createAccountCta'))}</button></div>`;
   }
 
   /* ---------------- Google Identity Services ---------------- */
@@ -140,21 +139,21 @@ export async function renderAuth(el) {
         showOauthProfile(idToken, res.suggestedName, res.email);
         return;
       }
-      finish(res, `Welcome, ${res.user.displayName}!`);
+      finish(res, t('auth.welcome', { name: res.user.displayName }));
     } catch (e) { toast(e.message, 'error', 6000); }
   }
 
   function showOauthProfile(idToken, suggestedName, email) {
     el.innerHTML = `<div class="auth-wrap"><div class="card">
-      <h2>Almost there</h2>
-      <p class="muted small">Signing up as <strong>${esc(email)}</strong> (verified by Google).</p>
-      <label class="field"><span>I am a…</span>
-        <div class="seg"><button type="button" data-otype="rower" class="on">Rower</button><button type="button" data-otype="coach">Coach</button></div></label>
-      <label class="field"><span>Display name</span><input id="oName" value="${esc(suggestedName || '')}"></label>
-      <div class="toggle"><div><strong>Contribute my workout and wellness data to research</strong>
-        <p class="muted small">Pseudonymized; opt out anytime in Settings with zero effect on features.</p></div>
+      <h2>${esc(t('onboarding.oauthAlmost'))}</h2>
+      <p class="muted small">${esc(t('onboarding.oauthSigningUp', { email }))}</p>
+      <label class="field"><span>${esc(t('auth.iAmA'))}</span>
+        <div class="seg"><button type="button" data-otype="rower" class="on">${esc(t('auth.rower'))}</button><button type="button" data-otype="coach">${esc(t('auth.coach'))}</button></div></label>
+      <label class="field"><span>${esc(t('auth.displayName'))}</span><input id="oName" value="${esc(suggestedName || '')}"></label>
+      <div class="toggle"><div><strong>${esc(t('onboarding.researchToggle'))}</strong>
+        <p class="muted small">${esc(t('onboarding.researchSeparate'))}</p></div>
         <label class="switch"><input type="checkbox" id="oResearch" checked><span class="sl"></span></label></div>
-      <button id="oCreate" style="width:100%">Create account</button>
+      <button id="oCreate" style="width:100%">${esc(t('auth.createAccountCta'))}</button>
     </div></div>`;
     let otype = 'rower';
     el.querySelectorAll('[data-otype]').forEach(b => b.onclick = () => {
@@ -194,7 +193,7 @@ export async function renderAuth(el) {
 
     el.querySelector('#next1')?.addEventListener('click', () => {
       Object.assign(data, { displayName: val('#displayName'), email: val('#email'), password: val('#password'), teamCode: val('#teamCode') });
-      if (!data.displayName || !data.email || (data.password || '').length < 8) { toast('Fill in name, email, and a password of at least 8 characters.', 'error'); return; }
+      if (!data.displayName || !data.email || (data.password || '').length < 8) { toast(t('auth.fillNamePassword'), 'error'); return; }
       step = 2; draw();
     });
     el.querySelector('#back2')?.addEventListener('click', () => { step = 1; draw(); });
@@ -222,14 +221,14 @@ export async function renderAuth(el) {
             goalWeeklySessions: data.goalWeeklySessions, researchOptIn: data.researchOptIn,
           },
         });
-        if (res.joinedTeam) toast(`You'll join ${res.joinedTeam.name} once verified.`, 'success');
+        if (res.joinedTeam) toast(t('auth.joinTeamOnceVerified', { team: res.joinedTeam.name }), 'success');
         showVerify(res.email, res.devCode);
       } catch (e) {
         if (e.code === 'email_taken') {
           // The account already exists — never create a duplicate. Send the
           // user to sign in with their email prefilled instead.
           mode = 'login'; step = 1; draw();
-          toast('That email already has a RowPoint account — sign in below to get back to your workouts.', 'info', 7000);
+          toast(t('auth.emailTakenPrompt'), 'info', 7000);
           const emailInput = el.querySelector('#email');
           if (emailInput) { emailInput.value = data.email; el.querySelector('#password')?.focus(); }
           return;
@@ -241,25 +240,25 @@ export async function renderAuth(el) {
 
   function showVerify(email, devCode) {
     el.innerHTML = `<div class="auth-wrap"><div class="card">
-      <h2>Verify your email</h2>
-      <p class="muted">We sent a 6-digit verification code to <strong>${esc(email)}</strong>. You'll need it to enter RowPoint — accounts can't be used until the email is confirmed.</p>
-      ${devCode ? `<div class="notice mb"><strong>Development mode:</strong> no email service is configured on this server, so here's your code directly: <strong style="font-size:1.3rem;letter-spacing:3px">${esc(devCode)}</strong><br><span class="muted small">On a real deployment, set RESEND_API_KEY and this code arrives by email instead.</span></div>` : ''}
-      <label class="field"><span>Verification code</span><input id="code" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code"></label>
-      <button id="verifyBtn" style="width:100%">Verify & enter</button>
+      <h2>${esc(t('verify.title'))}</h2>
+      <p class="muted">${esc(t('verify.sentTo', { email }))}</p>
+      ${devCode ? `<div class="notice mb"><strong>${esc(t('verify.devMode'))}</strong> ${esc(t('verify.devModeBody'))} <strong style="font-size:1.3rem;letter-spacing:3px">${esc(devCode)}</strong><br><span class="muted small">${esc(t('verify.devModeHint'))}</span></div>` : ''}
+      <label class="field"><span>${esc(t('verify.codeLabel'))}</span><input id="code" inputmode="numeric" maxlength="6" placeholder="123456" autocomplete="one-time-code"></label>
+      <button id="verifyBtn" style="width:100%">${esc(t('verify.verifyEnter'))}</button>
       <div class="row mt center">
-        <button class="ghost sm" id="resend">Resend code</button>
-        <button class="ghost sm" id="backToLogin">Back to sign in</button>
+        <button class="ghost sm" id="resend">${esc(t('verify.resend'))}</button>
+        <button class="ghost sm" id="backToLogin">${esc(t('verify.backToSignIn'))}</button>
       </div>
     </div></div>`;
     el.querySelector('#verifyBtn').onclick = async () => {
       try {
         const res = await api('/auth/verify', { method: 'POST', body: { email, code: val('#code') } });
-        finish(res, 'Email verified — welcome to RowPoint!');
+        finish(res, t('auth.verifiedWelcome'));
       } catch (e) { toast(e.message, 'error'); }
     };
     el.querySelector('#resend').onclick = async () => {
       const r = await api('/auth/resend-verification', { method: 'POST', body: { email } });
-      toast('Code re-sent.');
+      toast(t('verify.resent'));
       if (r.devCode) showVerify(email, r.devCode);
     };
     el.querySelector('#backToLogin').onclick = () => { mode = 'login'; step = 1; draw(); };

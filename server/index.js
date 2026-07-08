@@ -46,6 +46,7 @@ import { workoutsRouter } from './workouts.js';
 import { wellnessRouter } from './wellness.js';
 import { socialRouter } from './social.js';
 import { groupsRouter } from './groups.js';
+import { progressRouter } from './progress.js';
 import { aiRouter } from './aiRouter.js';
 import { adminRouter } from './admin.js';
 import { attachRealtime } from './realtime.js';
@@ -75,6 +76,7 @@ export function createApp() {
   app.use('/api/wellness', wellnessRouter);
   app.use('/api/social', socialRouter);
   app.use('/api/groups', groupsRouter);
+  app.use('/api/me', progressRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/admin', adminRouter);
 

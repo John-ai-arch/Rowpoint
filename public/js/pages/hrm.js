@@ -8,16 +8,19 @@ import {
   ZONE_COLORS, ZONE_NAMES,
 } from '../ble/sensors.js';
 import { drawHrSeries, drawTrend } from '../components/charts.js';
+import { bluetoothHelpHtml } from '../ble/support.js';
+import { t } from '../i18n.js';
 
 const STATE_LABEL = {
-  bluetooth_unavailable: 'Bluetooth unavailable in this browser',
-  disconnected: 'Disconnected',
-  scanning: 'Scanning…',
-  connecting: 'Connecting…',
-  connected: 'Connected',
-  signal_lost: 'Signal lost',
-  reconnecting: 'Reconnecting…',
+  bluetooth_unavailable: () => t('ble.stateUnavailable'),
+  disconnected: () => t('ble.stateDisconnected'),
+  scanning: () => t('ble.stateScanning'),
+  connecting: () => t('ble.stateConnecting'),
+  connected: () => t('ble.stateConnected'),
+  signal_lost: () => t('ble.stateSignalLost'),
+  reconnecting: () => t('ble.stateReconnecting'),
 };
+const stateLabel = (s) => (STATE_LABEL[s] ? STATE_LABEL[s]() : s);
 
 export async function renderHrm(el) {
   let tab = 'monitor';
@@ -52,7 +55,7 @@ export async function renderHrm(el) {
       <div class="card">
         <div class="row between">
           <div class="conn-state ${connected ? 'streaming' : hrManager.state}" >
-            <span class="pulse"></span><span id="hrState">${STATE_LABEL[hrManager.state] || hrManager.state}</span>
+            <span class="pulse"></span><span id="hrState">${esc(stateLabel(hrManager.state))}</span>
           </div>
           ${connected ? `<button class="sm danger" id="hrDisc">Disconnect</button>` : ''}
         </div>
@@ -85,7 +88,8 @@ export async function renderHrm(el) {
           ${ZONE_NAMES.map((n, i) => `<span class="badge" style="background:${ZONE_COLORS[i]}22;color:${ZONE_COLORS[i]}">${n.split(' · ')[0]} ${i === 0 ? `<${zb[1]}` : i === 4 ? `≥${zb[4]}` : `${zb[i]}–${zb[i + 1] - 1}`}</span>`).join('')}
         </div>` : `
         <div class="center mt mb">
-          <button id="hrConnect" style="font-size:1.1rem;padding:16px 42px">Connect a monitor</button>
+          ${hrManager.available() ? '' : bluetoothHelpHtml({ showSimulator: true })}
+          ${hrManager.available() ? `<button id="hrConnect" style="font-size:1.1rem;padding:16px 42px">${esc(t('ble.connectMonitor'))}</button>` : ''}
           <p class="muted small mt">The device picker lists <strong>only</strong> Bluetooth heart-rate monitors (Polar, Garmin, Wahoo, Coospo, Magene, …) — never headphones, speakers, or other gadgets. Wear the strap first: most only broadcast with skin contact.</p>
           <button class="ghost sm" id="hrSim">Try the simulated monitor (demo)</button>
         </div>`}

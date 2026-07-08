@@ -188,9 +188,9 @@ function memberTrainingDays(groupId) {
   return byUser;
 }
 
-const dayNum = (iso) => Math.floor(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / (DAY * 1000));
+export const dayNum = (iso) => Math.floor(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)) / (DAY * 1000));
 
-function streaksFor(days) {
+export function streaksFor(days) {
   let longest = 0, run = 0, prev = null;
   for (const d of days) {
     const n = dayNum(d);
@@ -352,19 +352,32 @@ function fmtDur(totalS) {
 
 export const BADGES = {
   first_workout: 'First Workout',
+  first_week: 'First Week Completed',
   workouts_100: '100 Workouts',
   workouts_500: '500 Workouts',
   meters_100k: '100,000 Meters',
   meters_1m: '1 Million Meters',
   meters_5m: '5 Million Meters',
+  marathon_42k: 'Marathon Distance',
   first_2k: 'First 2K',
   pb_2k: 'Personal Record',
   streak_7: 'Seven-Day Streak',
   streak_30: 'Thirty-Day Streak',
   streak_365: 'One-Year Streak',
+  weekly_goal: 'Weekly Goal Completed',
+  consistency_master: 'Consistency Master',
   weekly_champion: 'Weekly Champion',
   monthly_champion: 'Monthly Champion',
   challenge_winner: 'Challenge Winner',
+};
+
+// Icon for each badge, shared by every surface that renders achievements.
+export const BADGE_ICONS = {
+  first_workout: '🚣', first_week: '📅', workouts_100: '💯', workouts_500: '🏅',
+  meters_100k: '🌊', meters_1m: '🌍', meters_5m: '🏆', marathon_42k: '🏃',
+  first_2k: '⚡', pb_2k: '📈', streak_7: '🔥', streak_30: '🔥', streak_365: '👑',
+  weekly_goal: '🎯', consistency_master: '🧭', weekly_champion: '🥇',
+  monthly_champion: '👑', challenge_winner: '⚔️',
 };
 
 export function awardBadge(userId, badge, context = null) {
@@ -387,31 +400,51 @@ export function badgesFor(userId) {
 const METER_MILESTONES = [100000, 250000, 500000, 1000000, 2000000, 5000000, 10000000];
 
 export function onWorkoutSynced(user, workout, { newPb = false } = {}) {
+  // Badges newly unlocked by THIS workout — returned so the client can play a
+  // tasteful celebration. awardBadge() is idempotent and returns true only on
+  // a first-time unlock, so this never re-fires for existing achievements.
+  const newBadges = [];
+  const grant = (badge, ctx) => { if (awardBadge(user.id, badge, ctx)) newBadges.push(badge); };
+  const result = () => ({ newBadges: newBadges.map(b => ({ badge: b, label: BADGES[b], icon: BADGE_ICONS[b] || '🏅' })) });
   try {
     const totals = db.prepare(
       'SELECT COUNT(*) AS n, COALESCE(SUM(total_distance_m),0) AS meters FROM workouts WHERE user_id = ?').get(user.id);
 
     /* ---- personal achievements (always, independent of sharing) ---- */
-    awardBadge(user.id, 'first_workout');
-    if (totals.n >= 100) awardBadge(user.id, 'workouts_100');
-    if (totals.n >= 500) awardBadge(user.id, 'workouts_500');
-    if (totals.meters >= 100000) awardBadge(user.id, 'meters_100k');
-    if (totals.meters >= 1000000) awardBadge(user.id, 'meters_1m');
-    if (totals.meters >= 5000000) awardBadge(user.id, 'meters_5m');
+    grant('first_workout');
+    if (totals.n >= 100) grant('workouts_100');
+    if (totals.n >= 500) grant('workouts_500');
+    if (totals.meters >= 100000) grant('meters_100k');
+    if (totals.meters >= 1000000) grant('meters_1m');
+    if (totals.meters >= 5000000) grant('meters_5m');
     const plan = safeJson(workout.workout_plan_json);
-    if (plan?.type === 'distance' && Number(plan.distanceM) === 2000) awardBadge(user.id, 'first_2k');
-    if (newPb) awardBadge(user.id, 'pb_2k', { timeS: workout.total_time_s });
+    if (plan?.type === 'distance' && Number(plan.distanceM) === 2000) grant('first_2k');
+    if (newPb) grant('pb_2k', { timeS: workout.total_time_s });
+    if ((Number(workout.total_distance_m) || 0) >= 42195) grant('marathon_42k');
     const days = db.prepare(
       "SELECT date(started_at,'unixepoch') AS d FROM workouts WHERE user_id = ? GROUP BY d ORDER BY d").all(user.id).map(r => r.d);
     const { current } = streaksFor(days);
-    if (current >= 7) awardBadge(user.id, 'streak_7', { days: current });
-    if (current >= 30) awardBadge(user.id, 'streak_30', { days: current });
-    if (current >= 365) awardBadge(user.id, 'streak_365', { days: current });
+    if (current >= 7) grant('streak_7', { days: current });
+    if (current >= 30) grant('streak_30', { days: current });
+    if (current >= 365) grant('streak_365', { days: current });
+    // First Week Completed: training history spans at least a full week.
+    if (days.length >= 2 && (dayNum(days[days.length - 1]) - dayNum(days[0])) >= 6) grant('first_week');
+    // Consistency Master: trained in each of the last 4 ISO weeks.
+    const recentWeeks = new Set(days.map(d => isoWeekKey(dayNum(d) * DAY + 43200)));
+    const last4 = [0, 1, 2, 3].map(i => isoWeekKey(weekStartS() - i * 7 * DAY + 43200));
+    if (last4.every(w => recentWeeks.has(w))) grant('consistency_master');
+    // Weekly Goal Completed: this week's sessions met the user's stated goal.
+    if (user.goal_weekly_sessions > 0) {
+      const ws = weekStartS();
+      const weekSessions = db.prepare(
+        'SELECT COUNT(*) c FROM workouts WHERE user_id = ? AND started_at >= ?').get(user.id, ws).c;
+      if (weekSessions >= user.goal_weekly_sessions) grant('weekly_goal', { goal: user.goal_weekly_sessions });
+    }
 
     /* ---- group-facing effects (only when the athlete shares workouts) ---- */
-    if (!user.share_workouts_team) return;
+    if (!user.share_workouts_team) return result();
     const groups = db.prepare('SELECT group_id FROM group_members WHERE user_id = ?').all(user.id).map(r => r.group_id);
-    if (!groups.length) return;
+    if (!groups.length) return result();
 
     const meters = Number(workout.total_distance_m) || 0;
     const before = totals.meters - meters;
@@ -465,6 +498,7 @@ export function onWorkoutSynced(user, workout, { newPb = false } = {}) {
     // Social side-effects must never fail a workout save.
     log.error(`onWorkoutSynced side-effects failed: ${e.message}`);
   }
+  return result();
 }
 
 function goalProgressValue(groupId, goal) {

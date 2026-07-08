@@ -1,9 +1,11 @@
 // RowPoint SPA shell: hash router, top bar, tab nav, auth guard.
 import { state, loadMe, setSession, api, toast, esc } from './api.js';
 import { startSyncWorker, pendingCount } from './offline.js';
+import { t, firstRunNeedsLanguage, setLocale, LOCALES } from './i18n.js';
 import { renderAuth } from './pages/auth.js';
 import { renderDashboard } from './pages/dashboard.js';
 import { renderRow } from './pages/row.js';
+import { renderProgress } from './pages/progress.js';
 import { renderHistory } from './pages/history.js';
 import { renderWorkoutDetail } from './pages/workoutDetail.js';
 import { renderBuilder } from './pages/builder.js';
@@ -22,6 +24,7 @@ const routes = [
   { re: /^\/?$/, page: renderDashboard, tab: 'home' },
   { re: /^\/login/, page: renderAuth, public: true },
   { re: /^\/row/, page: renderRow, tab: 'row' },
+  { re: /^\/progress/, page: renderProgress, tab: 'progress' },
   { re: /^\/history$/, page: renderHistory, tab: 'history' },
   { re: /^\/workout\/([\w-]+)/, page: renderWorkoutDetail, tab: 'history' },
   { re: /^\/builder/, page: renderBuilder, tab: 'row' },
@@ -38,28 +41,55 @@ const routes = [
 
 let cleanup = null;
 
+/* First-launch language selection — a polished full-screen chooser shown
+   before anything else when no language preference is stored yet. */
+function renderLanguageScreen() {
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="lang-screen">
+      <div class="brand" style="justify-content:center;font-size:1.7rem;margin-bottom:6px"><span class="dot"></span> RowPoint</div>
+      <p class="muted">${esc(t('common.tagline'))}</p>
+      <h2 style="margin-top:22px">${esc(t('langScreen.choose'))}</h2>
+      <div style="margin-top:14px">
+        ${LOCALES.map(l => `
+          <button class="lang-opt" data-loc="${l.code}">
+            <span class="flag">${l.flag}</span>
+            <span>${esc(l.native)}<span class="sub">${esc(t(l.code === 'de' ? 'langScreen.germanSub' : 'langScreen.englishSub'))}</span></span>
+          </button>`).join('')}
+      </div>
+      <p class="muted small mt">${esc(t('langScreen.subtitle'))}</p>
+    </div>`;
+  app.querySelectorAll('[data-loc]').forEach(b => b.onclick = () => {
+    setLocale(b.dataset.loc);
+    boot();
+  });
+}
+
 function shell(contentEl, activeTab) {
   const u = state.user;
   const pending = u ? pendingCount(u.id) : 0;
   const app = document.getElementById('app');
+  const tab = (href, id, ico, label) =>
+    `<a href="${href}" class="${activeTab === id ? 'active' : ''}" ${activeTab === id ? 'aria-current="page"' : ''}><span class="ico" aria-hidden="true">${ico}</span>${esc(label)}</a>`;
   app.innerHTML = `
     <header class="topbar">
-      <div class="brand"><span class="dot"></span> RowPoint</div>
+      <a class="brand" href="#/" aria-label="RowPoint home"><span class="dot" aria-hidden="true"></span> RowPoint</a>
       <div class="actions">
-        ${pending ? `<span class="badge amber" title="Workouts waiting to sync">${pending} pending</span>` : ''}
-        ${u ? `<button class="ghost sm" id="notifBtn" aria-label="Notifications">🔔<span id="notifCount"></span></button>` : ''}
-        ${u ? `<a href="#/settings" class="btn ghost sm" aria-label="Settings">⚙︎</a>` : ''}
+        ${pending ? `<span class="badge amber" title="${esc(t('nav.pendingTitle'))}">${esc(t('nav.pending', { n: pending }))}</span>` : ''}
+        ${u ? `<button class="ghost sm" id="notifBtn" aria-label="${esc(t('nav.notifications'))}">🔔<span id="notifCount"></span></button>` : ''}
+        ${u ? `<a href="#/settings" class="btn ghost sm" aria-label="${esc(t('nav.settings'))}">⚙︎</a>` : ''}
       </div>
     </header>
     <main id="page"></main>
     ${u ? `
     <nav class="tabs" aria-label="Main">
-      <a href="#/" class="${activeTab === 'home' ? 'active' : ''}"><span class="ico">⌂</span>Home</a>
-      <a href="#/row" class="${activeTab === 'row' ? 'active' : ''}"><span class="ico">⏱</span>Row</a>
-      <a href="#/hr" class="${activeTab === 'hr' ? 'active' : ''}"><span class="ico">❤</span>Heart Rate</a>
-      <a href="#/history" class="${activeTab === 'history' ? 'active' : ''}"><span class="ico">☰</span>History</a>
-      <a href="#/teams" class="${activeTab === 'teams' ? 'active' : ''}"><span class="ico">⚑</span>Teams</a>
-      <a href="#/social" class="${activeTab === 'social' ? 'active' : ''}"><span class="ico">◎</span>Social</a>
+      ${tab('#/', 'home', '⌂', t('nav.home'))}
+      ${tab('#/row', 'row', '⏱', t('nav.row'))}
+      ${tab('#/progress', 'progress', '◈', t('nav.progress'))}
+      ${tab('#/hr', 'hr', '❤', t('nav.heart'))}
+      ${tab('#/history', 'history', '☰', t('nav.history'))}
+      ${tab('#/teams', 'teams', '⚑', t('nav.teams'))}
+      ${tab('#/social', 'social', '◎', t('nav.social'))}
     </nav>` : ''}
   `;
   document.getElementById('page').appendChild(contentEl);
@@ -75,9 +105,9 @@ async function wireNotifications() {
     if (unread) document.getElementById('notifCount').textContent = ` ${unread}`;
     btn.onclick = async () => {
       const items = notifications.slice(0, 20).map(n =>
-        `<div class="list-item"><div><strong>${esc(n.title)}</strong><div class="muted small">${esc(n.body || '')}</div></div></div>`).join('')
-        || '<p class="muted">No notifications yet.</p>';
-      openModal(`<h2>Notifications</h2>${items}`);
+        `<div class="list-item"><div class="avatar" aria-hidden="true">🔔</div><div><strong>${esc(n.title)}</strong><div class="muted small">${esc(n.body || '')}</div></div></div>`).join('')
+        || `<div class="empty"><span class="ic" aria-hidden="true">🔔</span><p class="muted">${esc(t('nav.noNotifications'))}</p></div>`;
+      openModal(`<h2>${esc(t('nav.notifications'))}</h2>${items}`);
       if (unread) { await api('/users/me/notifications/read', { method: 'POST' }); document.getElementById('notifCount').textContent = ''; }
     };
   } catch { /* non-fatal */ }
@@ -87,10 +117,16 @@ export function openModal(html) {
   document.querySelector('.rp-modal')?.remove();
   const wrap = document.createElement('div');
   wrap.className = 'rp-modal';
-  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;';
+  wrap.setAttribute('role', 'dialog');
+  wrap.setAttribute('aria-modal', 'true');
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(4,10,22,.66);backdrop-filter:blur(6px);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;';
   wrap.innerHTML = `<div class="card" style="max-width:520px;width:100%;max-height:82vh;overflow:auto;">${html}
-    <div class="mt center"><button class="secondary" data-close>Close</button></div></div>`;
-  wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.dataset.close !== undefined && e.target.hasAttribute('data-close')) wrap.remove(); });
+    <div class="mt center"><button class="secondary" data-close>${esc(t('common.close'))}</button></div></div>`;
+  const close = () => wrap.remove();
+  wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.dataset.close !== undefined && e.target.hasAttribute('data-close')) close(); });
+  // Esc closes the modal (keyboard accessibility).
+  const onKey = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
+  document.addEventListener('keydown', onKey);
   document.body.appendChild(wrap);
   return wrap;
 }
@@ -118,19 +154,30 @@ async function route() {
 
 window.addEventListener('hashchange', route);
 window.addEventListener('rp:navigate', route);
+// Re-render the current view whenever the language changes so every string
+// (nav, chrome, and the active page) picks up the new locale immediately.
+window.addEventListener('rp:locale', route);
 
-(async function boot() {
+let booted = false;
+async function boot() {
+  // First launch: let the user pick a language before anything else renders.
+  if (firstRunNeedsLanguage()) { renderLanguageScreen(); return; }
+
   await loadMe();
   if (state.user) {
     startSyncWorker();
     // HR subsystem: silent reconnect to the preferred monitor at app launch.
     hrManager.tryAutoReconnect();
   }
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => { /* PWA optional */ });
+  if (!booted) {
+    booted = true;
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => { /* PWA optional */ });
+    }
+    window.addEventListener('rp:session', async () => { await loadMe(); startSyncWorker(); route(); });
   }
-  window.addEventListener('rp:session', async () => { await loadMe(); startSyncWorker(); route(); });
   route();
-})();
+}
+boot();
 
 export { setSession, toast };

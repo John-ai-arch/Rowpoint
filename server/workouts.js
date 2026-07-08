@@ -177,12 +177,12 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
 
   /* ---- groups: achievements, milestones, leaderboard notifications, goals ---- */
   const savedWorkout = db.prepare('SELECT * FROM workouts WHERE id = ?').get(b.id);
-  onWorkoutSynced(req.user, savedWorkout, { newPb });
+  const { newBadges } = onWorkoutSynced(req.user, savedWorkout, { newPb });
 
   /* ---- research contribution (§5.2, write-time opt-in check) ---- */
   const research = contributeWorkout(req.user, savedWorkout, normSplits);
 
-  res.status(201).json({ ok: true, workoutId: b.id, aiFeedback, newPb, research: { contributed: research.contributed } });
+  res.status(201).json({ ok: true, workoutId: b.id, aiFeedback, newPb, newBadges, research: { contributed: research.contributed } });
 });
 
 export function upsertLeaderboard(scopeType, scopeId, workoutKey, user, avgSplit, dist, time, finished) {

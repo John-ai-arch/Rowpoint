@@ -2,14 +2,26 @@
 // deliberately separate from research), research toggle (§5.1), per-category
 // notifications (§14), CSV export (§14), full account deletion (§10.1(v)).
 import { api, state, setSession, toast, esc } from '../api.js';
+import { t, getLocale, setLocale, LOCALES } from '../i18n.js';
+import { soundEnabled, setSoundEnabled } from '../celebrate.js';
 
 export function renderSettings(el) {
   const u = state.user;
   const np = u.notifPrefs || {};
-  el.innerHTML = `<h1>Settings</h1>
+  el.innerHTML = `<h1>${esc(t('settings.title'))}</h1>
 
   <div class="card">
-    <h3>Profile & goals</h3>
+    <h3>${esc(t('settings.language'))}</h3>
+    <div class="seg" role="radiogroup" aria-label="${esc(t('settings.language'))}">
+      ${LOCALES.map(l => `<button type="button" data-lang="${l.code}" class="${getLocale() === l.code ? 'on' : ''}">${l.flag} ${esc(l.native)}</button>`).join('')}
+    </div>
+    <p class="muted small mt">${esc(t('settings.languageHint'))}</p>
+    <div class="toggle"><div>${esc(t('settings.celebrationSounds'))}</div>
+      <label class="switch"><input type="checkbox" id="soundToggle" ${soundEnabled() ? 'checked' : ''}><span class="sl"></span></label></div>
+  </div>
+
+  <div class="card">
+    <h3>${esc(t('settings.profileGoals'))}</h3>
     <div class="grid cols2">
       <label class="field"><span>Display name</span><input id="displayName" value="${esc(u.displayName)}"></label>
       <label class="field"><span>Units</span>
@@ -27,7 +39,7 @@ export function renderSettings(el) {
   </div>
 
   <div class="card">
-    <h3>Sharing with teams & groups</h3>
+    <h3>${esc(t('settings.sharing'))}</h3>
     <p class="muted small">Controls what teammates, coaches, and groups can see. Completely separate from research below.</p>
     ${toggle('shareWorkoutsTeam', 'Share my workouts with my teams & groups', u.shareWorkoutsTeam)}
     ${toggle('share2kHistory', 'Share my 2k PB and attempt history', u.share2kHistory)}
@@ -36,14 +48,14 @@ export function renderSettings(el) {
   </div>
 
   <div class="card">
-    <h3>Research contribution</h3>
+    <h3>${esc(t('settings.research'))}</h3>
     ${toggle('researchOptIn', 'Contribute my workout and wellness data to research', u.researchOptIn)}
     ${toggle('researchShareDemographics', 'Include demographics (age decade, weight class) in contributions', u.researchShareDemographics)}
     <p class="muted small">Pseudonymized — your name and email never enter the research dataset. Contributions include workout metrics and, when recorded, full heart-rate data. Demographics are a separate consent: with it off, your workouts contribute without any age or weight information. While opted in, the full per-second heart-rate recording is kept with each of your workouts; opted out, only summary statistics (average/max/min, time in zones, drift) are stored. Opting out stops all future contribution immediately and never affects any feature. Data contributed while opted in stays in the research set; deleting your account removes it entirely.</p>
   </div>
 
   <div class="card">
-    <h3>Notifications</h3>
+    <h3>${esc(t('settings.notifications'))}</h3>
     <p class="muted small">Each category is separate — no blanket switch.</p>
     ${toggle('np_workout_reminder', 'Workout reminders', np.workout_reminder)}
     ${toggle('np_wellness_reminder', 'Daily wellness check-in reminder', np.wellness_reminder)}
@@ -53,12 +65,12 @@ export function renderSettings(el) {
   </div>
 
   <div class="card">
-    <h3>Your data</h3>
+    <h3>${esc(t('settings.yourData'))}</h3>
     <div class="row">
-      <button class="secondary" id="exportBtn">Export my history (CSV)</button>
+      <button class="secondary" id="exportBtn">${esc(t('settings.exportCsv'))}</button>
     </div>
     <hr style="border-color:var(--border)">
-    <h3 style="color:var(--bad)">Delete account</h3>
+    <h3 style="color:var(--bad)">${esc(t('settings.deleteAccount'))}</h3>
     <p class="muted small">Permanently removes your account, workouts, wellness data, team memberships, and your contributions to the research dataset. This cannot be undone.</p>
     <div class="row">
       <input id="delConfirm" placeholder='type "delete" to confirm' style="flex:1">
@@ -66,7 +78,17 @@ export function renderSettings(el) {
     </div>
   </div>
 
-  <div class="center mb"><button class="ghost" id="logoutBtn">Sign out</button></div>`;
+  <div class="center mb"><button class="ghost" id="logoutBtn">${esc(t('settings.signOut'))}</button></div>`;
+
+  // Language switcher — persists + re-renders the whole app in the new locale.
+  el.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => {
+    if (getLocale() !== b.dataset.lang) setLocale(b.dataset.lang); // fires rp:locale → app re-renders
+  });
+  // Celebration sound preference (client-only, off by default).
+  el.querySelector('#soundToggle').onchange = (e) => {
+    setSoundEnabled(e.target.checked);
+    toast(t('settings.saved'), 'success');
+  };
 
   function toggle(id, label, on) {
     return `<div class="toggle"><div>${label}</div>

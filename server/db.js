@@ -378,6 +378,10 @@ ensureColumn('users', 'role', "role TEXT NOT NULL DEFAULT 'user'");
 // class) entering the research dataset — independent of the main research
 // toggle so athletes can contribute workouts without demographics.
 ensureColumn('users', 'research_share_demographics', 'research_share_demographics INTEGER NOT NULL DEFAULT 1');
+// Personal weekly-distance goal (meters) for the Progress hub — reuses the
+// existing per-user goal fields (goal_weekly_sessions/minutes) rather than a
+// new goals subsystem.
+ensureColumn('users', 'goal_weekly_meters', 'goal_weekly_meters INTEGER');
 
 // AI coach recommendations: generation source (llm | analysis_engine |
 // guardrail), model confidence, and adherence tracking (followed is set when

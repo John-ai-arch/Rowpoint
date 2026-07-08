@@ -25,7 +25,7 @@ export function publicUser(u) {
     best2kVerified: !!u.best_2k_verified, units: u.units,
     goalType: u.goal_type, goalTargetEvent: u.goal_target_event,
     goalTargetDate: u.goal_target_date, goalWeeklySessions: u.goal_weekly_sessions,
-    goalWeeklyMinutes: u.goal_weekly_minutes,
+    goalWeeklyMinutes: u.goal_weekly_minutes, goalWeeklyMeters: u.goal_weekly_meters,
     maxHr: u.max_hr, restingHr: u.resting_hr,
     emailVerified: !!u.email_verified, researchOptIn: !!u.research_opt_in,
     shareWorkoutsTeam: !!u.share_workouts_team, share2kHistory: !!u.share_2k_history,

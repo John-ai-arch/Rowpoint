@@ -1,19 +1,24 @@
-// Home: AI suggestion of the day (§11), wellness prompt (§12), assigned
-// workouts, daily suggested workouts (§7), quick stats.
+// Home: a "How am I doing?" progress hero (streak, weekly goal, lifetime,
+// recent achievements — reusing /api/me/progress), the AI coach recommendation
+// (§11), wellness prompt (§12), assigned workouts, daily suggestions (§7),
+// and recent workouts.
 import { api, state, toast, esc, fmtSplit, fmtDistance, fmtDuration, fmtDate } from '../api.js';
+import { t } from '../i18n.js';
 import { describePlanText } from './builder.js';
 
 export async function renderDashboard(el) {
   const u = state.user;
-  el.innerHTML = `<h1>Hi, ${esc(u.displayName.split(' ')[0])} 👋</h1><div id="content"><p class="muted">Loading…</p></div>`;
+  el.innerHTML = `<h1>${esc(t('dash.greeting', { name: u.displayName.split(' ')[0] }))}</h1>
+    <div id="content">${dashSkeleton()}</div>`;
 
   const content = el.querySelector('#content');
-  const [wellnessRes, aiRes, teamsRes, workoutsRes, dailyRes] = await Promise.allSettled([
+  const [wellnessRes, aiRes, teamsRes, workoutsRes, dailyRes, progRes] = await Promise.allSettled([
     api('/wellness/today'),
     api('/ai/suggestion'),
     api('/teams'),
     api('/workouts/?limit=5'),
     api('/workouts/daily/suggestions'),
+    api('/me/progress'),
   ]);
 
   const checkin = wellnessRes.status === 'fulfilled' ? wellnessRes.value.checkin : null;
@@ -21,66 +26,61 @@ export async function renderDashboard(el) {
   const teams = teamsRes.status === 'fulfilled' ? teamsRes.value : { coached: [], joined: [] };
   const recent = workoutsRes.status === 'fulfilled' ? workoutsRes.value.workouts : [];
   const daily = dailyRes.status === 'fulfilled' ? dailyRes.value.suggestions : [];
+  const prog = progRes.status === 'fulfilled' ? progRes.value.progress : null;
 
   // Assigned workouts across joined teams (today's first).
   let assignments = [];
-  for (const t of teams.joined || []) {
+  for (const tm of teams.joined || []) {
     try {
-      const r = await api(`/teams/${t.id}/assignments`);
-      assignments.push(...r.assignments.filter(a => !a.completedByMe).map(a => ({ ...a, teamName: t.name, teamId: t.id })));
+      const r = await api(`/teams/${tm.id}/assignments`);
+      assignments.push(...r.assignments.filter(a => !a.completedByMe).map(a => ({ ...a, teamName: tm.name, teamId: tm.id })));
     } catch { /* team fetch best-effort */ }
   }
   assignments = assignments.slice(0, 4);
 
-  const totalM = recent.reduce((s, w) => s + (w.total_distance_m || 0), 0);
-
   content.innerHTML = `
-    ${!checkin ? `
-    <div class="card ai-card" id="wellnessNudge">
-      <div class="row between"><h3>Daily check-in</h3><span class="badge blue">~20 seconds</span></div>
-      <p class="muted small">Sleep, soreness, stress — it powers smarter training suggestions and overtraining alerts.</p>
-      <a class="btn" href="#/wellness">Check in now</a>
-    </div>` : ''}
+    ${prog && prog.totals.workouts ? heroHtml(prog, u) : ''}
 
     ${suggestion ? renderCoachCard(suggestion) : ''}
 
+    ${!checkin ? `
+    <div class="card ai-card" id="wellnessNudge">
+      <div class="row between"><h3>${esc(t('dash.dailyCheckin'))}</h3><span class="badge blue">${esc(t('dash.seconds'))}</span></div>
+      <p class="muted small">${esc(t('dash.checkinBlurb'))}</p>
+      <a class="btn" href="#/wellness">${esc(t('dash.checkinCta'))}</a>
+    </div>` : ''}
+
     ${assignments.length ? `
     <div class="card">
-      <h3>Assigned by your coach</h3>
+      <h3>${esc(t('dash.assignedByCoach'))}</h3>
       ${assignments.map(a => `
         <div class="list-item">
           <div style="flex:1"><strong>${esc(a.name)}</strong>
             <div class="muted small">${esc(describePlanText(a.plan))} · ${esc(a.teamName)} · ${esc(a.scheduledDate)}${a.note ? ` · “${esc(a.note)}”` : ''}</div></div>
-          <a class="btn sm" href="#/row?assignment=${a.id}&team=${a.teamId}">Row it</a>
+          <a class="btn sm" href="#/row?assignment=${a.id}&team=${a.teamId}">${esc(t('dash.rowIt'))}</a>
         </div>`).join('')}
     </div>` : ''}
 
-    <div class="grid cols3">
-      <div class="stat-tile"><div class="n">${recent.length}</div><div class="l">recent workouts</div></div>
-      <div class="stat-tile"><div class="n">${fmtDistance(totalM)}</div><div class="l">recent meters</div></div>
-      <div class="stat-tile"><div class="n">${u.best2kSeconds ? fmtSplit(u.best2kSeconds / 4) : '–'}</div><div class="l">2k pace PB ${u.best2kVerified ? '✓' : '(self-reported)'}</div></div>
-    </div>
-
     ${daily.length ? `
     <div class="card">
-      <h3>Today's suggested workouts</h3>
+      <h3>${esc(t('dash.suggestedToday'))}</h3>
       ${daily.map(d => `<div class="list-item"><div style="flex:1"><strong>${esc(d.name)}</strong>
         <div class="muted small">${esc(d.machineType)} · ${esc(describePlanText(d.plan))}</div></div>
-        <a class="btn sm secondary" href="#/row?planId=${d.id}">Row</a></div>`).join('')}
+        <a class="btn sm secondary" href="#/row?planId=${d.id}">${esc(t('dash.row'))}</a></div>`).join('')}
     </div>` : ''}
 
     ${recent.length ? `
     <div class="card">
-      <div class="row between"><h3>Recent workouts</h3><a href="#/history" class="small">See all →</a></div>
+      <div class="row between"><h3>${esc(t('dash.recentWorkouts'))}</h3><a href="#/history" class="small">${esc(t('dash.seeAll'))}</a></div>
       ${recent.map(w => `<a class="list-item" href="#/workout/${w.id}" style="color:inherit">
         <div class="avatar">${w.machine_type === 'bike' ? '🚲' : '🚣'}</div>
         <div style="flex:1"><strong>${fmtDistance(w.total_distance_m)} · ${fmtDuration(w.total_time_s)}</strong>
           <div class="muted small">${fmtDate(w.started_at)} · avg ${fmtSplit(w.avg_split_s)}/500m${w.assigned_by_coach_id ? ' · coach-assigned' : ''}</div></div>
         ${w.aiFeedback ? `<span class="badge ${w.aiFeedback.classification === 'well_paced' ? 'green' : 'amber'}">${esc((w.aiFeedback.classification || '').replaceAll('_', ' '))}</span>` : ''}
       </a>`).join('')}
-    </div>` : `<div class="card center"><h3>No workouts yet</h3><p class="muted">Connect to an erg — or fire up the simulator — and pull your first strokes.</p><a class="btn" href="#/row">Start rowing</a></div>`}
+    </div>` : `<div class="card"><div class="empty"><span class="ic" aria-hidden="true">🚣</span><h3>${esc(t('dash.noWorkoutsTitle'))}</h3><p class="muted">${esc(t('dash.noWorkoutsBlurb'))}</p><a class="btn mt" href="#/row">${esc(t('dash.startRowing'))}</a></div></div>`}
 
-    ${u.isAdmin ? `<div class="card"><h3>Admin tools</h3><a class="btn secondary" href="#/admin">Open admin dashboard</a></div>` : ''}
+    ${u.isAdmin ? `<div class="card"><h3>${esc(t('dash.adminTools'))}</h3><a class="btn secondary" href="#/admin">${esc(t('dash.openAdmin'))}</a></div>` : ''}
   `;
 
   // "Start this session" hands the coach's machine-programmable plan to the
@@ -103,6 +103,64 @@ export async function renderDashboard(el) {
       whyBtn.textContent = d.style.display === 'none' ? 'Why this workout?' : 'Hide details';
     };
   }
+}
+
+/** "How am I doing?" hero — streak, weekly goal ring, lifetime, this week,
+ *  2k PB, and recent achievements. Reuses the /api/me/progress payload. */
+function heroHtml(prog, u) {
+  const weekMeters = prog.week.meters;
+  const goalMeters = Math.max(prog.goals.weeklyMeters || 0, 1);
+  const pct = Math.min(100, Math.round((weekMeters / goalMeters) * 100));
+  const r = 40, c = 2 * Math.PI * r, offset = c * (1 - pct / 100);
+  const recentAch = (prog.badges || []).filter(b => b.unlocked)
+    .sort((a, b) => (b.achievedAt || 0) - (a.achievedAt || 0)).slice(0, 4);
+
+  return `
+  <div class="card" style="background:linear-gradient(150deg, rgba(56,189,248,.10), var(--card) 60%)">
+    <div class="row between" style="align-items:flex-start;gap:18px">
+      <div>
+        <p class="muted small" style="margin:0 0 10px">${esc(t('dash.howAmIDoing'))}</p>
+        <div class="row" style="gap:22px;align-items:center">
+          <div class="streak-hero">
+            <span class="flame" aria-hidden="true">🔥</span>
+            <div><div style="font-size:2rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1">${prog.streak.current}</div>
+              <div class="l" style="color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.6px">${esc(t('progress.dayStreak'))}</div></div>
+          </div>
+          <div class="ring" style="width:96px;height:96px">
+            <svg viewBox="0 0 96 96" aria-hidden="true">
+              <circle class="track" cx="48" cy="48" r="${r}" stroke-width="9"></circle>
+              <circle class="bar" cx="48" cy="48" r="${r}" stroke-width="9" stroke="url(#dashring)"
+                stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"></circle>
+              <defs><linearGradient id="dashring" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#38bdf8"/><stop offset="100%" stop-color="#6d7bf6"/></linearGradient></defs>
+            </svg>
+            <div class="ring-label"><div class="v" style="font-size:1.1rem">${pct}%</div><div class="u" style="font-size:.55rem;letter-spacing:.4px;max-width:72px;margin:0 auto;line-height:1.15">${esc(t('progress.weeklyGoal'))}</div></div>
+          </div>
+        </div>
+      </div>
+      <a class="btn ghost sm" href="#/progress">${esc(t('dash.viewProgress'))}</a>
+    </div>
+
+    <div class="grid cols4 mt">
+      <div class="stat-tile tight"><div class="n">${fmtDistance(weekMeters)}</div><div class="l">${esc(t('dash.thisWeek'))}</div></div>
+      <div class="stat-tile tight"><div class="n">${fmtDistance(prog.totals.meters)}</div><div class="l">${esc(t('dash.lifetime'))}</div></div>
+      <div class="stat-tile tight"><div class="n">${prog.totals.workouts}</div><div class="l">${esc(t('progress.totalWorkouts'))}</div></div>
+      <div class="stat-tile tight"><div class="n">${u.best2kSeconds ? fmtSplit(u.best2kSeconds / 4) : '–'}</div><div class="l">${esc(t('dash.twoKpb'))} ${u.best2kVerified ? '✓' : esc(t('dash.selfReported'))}</div></div>
+    </div>
+
+    ${recentAch.length ? `
+    <div class="mt">
+      <p class="muted small" style="margin:4px 0 8px">${esc(t('dash.recentAchievements'))}</p>
+      <div class="row" style="gap:8px">
+        ${recentAch.map(b => `<span class="chip" title="${esc(fmtDate(b.achievedAt))}">${b.icon} ${esc(t('achievements.' + b.badge))}</span>`).join('')}
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
+function dashSkeleton() {
+  return `<div class="card skeleton" style="height:190px"></div>
+    <div class="card skeleton" style="height:150px"></div>
+    <div class="grid cols3">${'<div class="stat-tile skeleton" style="height:74px"></div>'.repeat(3)}</div>`;
 }
 
 /** Today's AI coach recommendation card. */

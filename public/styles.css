@@ -126,6 +126,7 @@ p { line-height: 1.55; }
 .muted { color: var(--muted); }
 .small { font-size: .84rem; }
 .center { text-align: center; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .mt { margin-top: 1rem; } .mb { margin-bottom: 1rem; }
 .spacer { flex: 1; }
 

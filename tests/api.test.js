@@ -917,6 +917,58 @@ test('/admin/system reports storage persistence facts (instance id, boot count)'
   assert.equal(typeof p.dbExistedAtBoot, 'boolean');
 });
 
+/* ---------------- personal progress & gamification hub ---------------- */
+
+test('progress: /api/me/progress aggregates totals, streak, PRs, badges from real data', async () => {
+  const p = await makeUser('progress@test.com', 'rower', { displayName: 'Pat', goalWeeklySessions: 3 });
+  // a verified 2k plus a couple of steady rows on the same day (streak = 1)
+  await req('/workouts/sync', { method: 'POST', token: p.token, body: workoutBody([112, 113, 114, 115], { plan: { type: 'distance', distanceM: 2000 } }) });
+  await req('/workouts/sync', { method: 'POST', token: p.token, body: workoutBody([130, 130, 130]) });
+
+  const { status, body } = await req('/me/progress', { token: p.token });
+  assert.equal(status, 200);
+  const g = body.progress;
+  assert.ok(g.totals.meters > 0 && g.totals.workouts === 2, 'lifetime totals');
+  assert.equal(g.streak.current, 1, 'today counts toward the streak');
+  assert.ok(g.records.best2k && g.records.best2k.timeS > 0, 'verified 2k PR captured');
+  assert.ok(g.records.fastestSplit && g.records.fastestSplit.split > 0, 'fastest split PR');
+  assert.equal(g.calendar.length, 84, '12-week consistency calendar');
+  assert.ok(g.goals.weeklySessions === 3, 'reuses the existing weekly session goal');
+  // badges include the full catalog with unlocked flags; personal ones fired
+  const unlocked = g.badges.filter(b => b.unlocked).map(b => b.badge);
+  assert.ok(unlocked.includes('first_workout'), 'first workout badge unlocked');
+  assert.ok(unlocked.includes('first_2k'), 'first 2k badge unlocked');
+  assert.ok(g.badges.some(b => !b.unlocked), 'locked badges still listed for the collection');
+  assert.equal(g.badgeCount.total, g.badges.length);
+});
+
+test('progress: weekly distance goal persists via the standard /users/me PATCH', async () => {
+  const p = await makeUser('goalset@test.com', 'rower', { displayName: 'Gina' });
+  const patched = await req('/users/me', { method: 'PATCH', body: { goalWeeklyMeters: 25000 }, token: p.token });
+  assert.equal(patched.status, 200);
+  assert.equal(patched.body.user.goalWeeklyMeters, 25000);
+  const { body } = await req('/me/progress', { token: p.token });
+  assert.equal(body.progress.goals.weeklyMeters, 25000);
+});
+
+test('progress: endpoint requires auth', async () => {
+  assert.equal((await req('/me/progress')).status, 401);
+});
+
+test('achievements: workout sync reports newly-unlocked badges (idempotent)', async () => {
+  const c = await makeUser('celebrate@test.com', 'rower', { displayName: 'Cara' });
+  const first = await req('/workouts/sync', { method: 'POST', token: c.token, body: workoutBody([120, 120, 120, 120], { plan: { type: 'distance', distanceM: 2000 } }) });
+  assert.equal(first.status, 201);
+  assert.ok(Array.isArray(first.body.newBadges), 'sync returns a newBadges array');
+  const keys = first.body.newBadges.map(b => b.badge);
+  assert.ok(keys.includes('first_workout'), 'first workout unlocked on first sync');
+  assert.ok(keys.includes('first_2k'), 'first 2k unlocked');
+  assert.ok(first.body.newBadges.every(b => b.label && b.icon), 'badges carry label + icon for the toast');
+  // second, different workout must NOT re-award the same badges
+  const second = await req('/workouts/sync', { method: 'POST', token: c.token, body: workoutBody([130, 130, 130]) });
+  assert.ok(!second.body.newBadges.map(b => b.badge).includes('first_workout'), 'already-earned badges are not re-fired');
+});
+
 test('daily suggested workouts have stable shareable ids (§7)', async () => {
   const a = await req('/workouts/daily/suggestions', { token: rower.token });
   const b = await req('/workouts/daily/suggestions', { token: rower2.token });
