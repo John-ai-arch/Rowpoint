@@ -8,11 +8,12 @@ import WebSocket from 'ws';
 const DIR = `/tmp/rowpoint-rt-${process.pid}`;
 fs.rmSync(DIR, { recursive: true, force: true });
 process.env.ROWPOINT_DATA_DIR = DIR;
+process.env.ROWPOINT_BACKUPS_ENABLED = '0'; // no nightly backup timer/CPU spike under test
 
 const { startServer } = await import('../server/index.js');
 const server = await startServer(0);
 const PORT = server.address().port;
-const BASE = `http://localhost:${PORT}`;
+const BASE = `http://127.0.0.1:${PORT}`; // IPv4 pin — avoids localhost dual-stack connect flakiness
 
 async function req(path, { method = 'GET', body, token } = {}) {
   const headers = {};
@@ -31,7 +32,7 @@ async function makeUser(email, accountType = 'rower') {
 
 function connectWs(token) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://localhost:${PORT}/ws?token=${encodeURIComponent(token)}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws?token=${encodeURIComponent(token)}`);
     const messages = [];
     const waiters = [];
     ws.on('message', (d) => {
@@ -128,7 +129,7 @@ test('non-members are rejected from a team workout channel', async () => {
 });
 
 test('unverified/invalid tokens are refused', async () => {
-  const ws = new WebSocket(`ws://localhost:${PORT}/ws?token=garbage`);
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws?token=garbage`);
   const msg = await new Promise((resolve) => ws.on('message', d => resolve(JSON.parse(d.toString()))));
   assert.equal(msg.code, 'unauthenticated');
 });

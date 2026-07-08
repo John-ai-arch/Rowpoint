@@ -16,7 +16,11 @@ const { startServer } = await import('../server/index.js');
 const { resetRateLimits } = await import('../server/ratelimit.js');
 const server = await startServer(0);
 const PORT = server.address().port;
-const BASE = `http://localhost:${PORT}`;
+// 127.0.0.1, not "localhost": on dual-stack hosts (notably Windows) "localhost"
+// can resolve to IPv6 ::1 first while the server is on IPv4, and undici waits
+// out its 10s connect timeout before failing — making the suite flaky. Pinning
+// IPv4 removes that resolution ambiguity.
+const BASE = `http://127.0.0.1:${PORT}`;
 
 async function req(path, { method = 'GET', body, token } = {}) {
   const headers = {};
@@ -933,6 +937,11 @@ test('progress: /api/me/progress aggregates totals, streak, PRs, badges from rea
   assert.equal(g.streak.current, 1, 'today counts toward the streak');
   assert.ok(g.records.best2k && g.records.best2k.timeS > 0, 'verified 2k PR captured');
   assert.ok(g.records.fastestSplit && g.records.fastestSplit.split > 0, 'fastest split PR');
+  // Smart PRs: sustained-effort + volume records beyond the test pieces.
+  assert.ok(g.records.highestStrokeRate && g.records.highestStrokeRate.spm > 0, 'highest stroke rate PR');
+  assert.ok(g.records.biggestWeekMeters > 0, 'biggest-week volume PR');
+  assert.ok(typeof g.records.longestStreakDays === 'number', 'longest-streak PR present');
+  assert.ok('highestWatts' in g.records && 'biggestMonthMeters' in g.records, 'watts + month PRs present');
   assert.equal(g.calendar.length, 84, '12-week consistency calendar');
   assert.ok(g.goals.weeklySessions === 3, 'reuses the existing weekly session goal');
   // badges include the full catalog with unlocked flags; personal ones fired

@@ -59,12 +59,36 @@ progressRouter.get('/progress', (req, res) => {
      WHERE user_id = ? AND avg_split_s > 0 AND total_distance_m >= 500`).get(uid);
   const longestPiece = db.prepare(
     `SELECT MAX(total_distance_m) AS meters, started_at AS at FROM workouts WHERE user_id = ?`).get(uid);
+  // Smart PRs: sustained-effort and volume records beyond the test pieces.
+  const best500 = db.prepare(
+    `SELECT total_time_s AS timeS, started_at AS at FROM workouts
+     WHERE user_id = ? AND json_extract(workout_plan_json,'$.type')='distance'
+       AND json_extract(workout_plan_json,'$.distanceM')=500 AND total_time_s > 0
+     ORDER BY total_time_s ASC LIMIT 1`).get(uid);
+  const highestWatts = db.prepare(
+    `SELECT MAX(avg_power_watts) AS watts, started_at AS at FROM workouts
+     WHERE user_id = ? AND avg_power_watts > 0 AND total_distance_m >= 1000`).get(uid);
+  const highestRate = db.prepare(
+    `SELECT MAX(avg_stroke_rate) AS spm, started_at AS at FROM workouts
+     WHERE user_id = ? AND avg_stroke_rate > 0 AND total_distance_m >= 1000`).get(uid);
+  const bigWeek = db.prepare(
+    `SELECT MAX(m) AS meters FROM (SELECT strftime('%Y-%W', started_at, 'unixepoch') AS wk,
+       SUM(total_distance_m) AS m FROM workouts WHERE user_id = ? GROUP BY wk)`).get(uid);
+  const bigMonth = db.prepare(
+    `SELECT MAX(m) AS meters FROM (SELECT strftime('%Y-%m', started_at, 'unixepoch') AS mo,
+       SUM(total_distance_m) AS m FROM workouts WHERE user_id = ? GROUP BY mo)`).get(uid);
   const records = {
     best2k: bestTime(TEST.best2k),
     best5k: bestTime(TEST.best5k),
     best6k: bestTime(TEST.best6k),
+    best500: best500?.timeS ? { timeS: best500.timeS, at: best500.at } : null,
     fastestSplit: fastestSplit?.split ? { split: fastestSplit.split, at: fastestSplit.at } : null,
     longestPiece: longestPiece?.meters ? { meters: Math.round(longestPiece.meters), at: longestPiece.at } : null,
+    highestWatts: highestWatts?.watts ? { watts: Math.round(highestWatts.watts), at: highestWatts.at } : null,
+    highestStrokeRate: highestRate?.spm ? { spm: Math.round(highestRate.spm), at: highestRate.at } : null,
+    biggestWeekMeters: bigWeek?.meters ? Math.round(bigWeek.meters) : null,
+    biggestMonthMeters: bigMonth?.meters ? Math.round(bigMonth.meters) : null,
+    longestStreakDays: streak.longest || 0,
   };
 
   // 12-week consistency calendar: meters per calendar day (for heatmap levels)

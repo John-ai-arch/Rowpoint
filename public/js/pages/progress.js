@@ -92,6 +92,12 @@ export async function renderProgress(el) {
         ${prCard(t('progress.best6k'), data.records.best6k && fmtDuration(data.records.best6k.timeS), data.records.best6k && fmtDate(data.records.best6k.at))}
         ${prCard(t('progress.fastestSplit'), data.records.fastestSplit && fmtSplit(data.records.fastestSplit.split) + '/500m', data.records.fastestSplit && fmtDate(data.records.fastestSplit.at))}
         ${prCard(t('progress.longestPiece'), data.records.longestPiece && fmtDistance(data.records.longestPiece.meters), data.records.longestPiece && fmtDate(data.records.longestPiece.at))}
+        ${prCard(t('progress.best500'), data.records.best500 && fmtDuration(data.records.best500.timeS), data.records.best500 && fmtDate(data.records.best500.at))}
+        ${prCard(t('progress.highestWatts'), data.records.highestWatts && `${data.records.highestWatts.watts} W`, data.records.highestWatts && fmtDate(data.records.highestWatts.at))}
+        ${prCard(t('progress.highestRate'), data.records.highestStrokeRate && `${data.records.highestStrokeRate.spm} spm`, data.records.highestStrokeRate && fmtDate(data.records.highestStrokeRate.at))}
+        ${prCard(t('progress.biggestWeek'), data.records.biggestWeekMeters && fmtDistance(data.records.biggestWeekMeters))}
+        ${prCard(t('progress.biggestMonth'), data.records.biggestMonthMeters && fmtDistance(data.records.biggestMonthMeters))}
+        ${prCard(t('progress.longestStreak'), data.records.longestStreakDays ? t('progress.nDays', { n: data.records.longestStreakDays }) : null)}
       </div>
     </div>
 
