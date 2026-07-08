@@ -73,7 +73,30 @@ leaderboard → AI feedback journeys in a real browser.
 | `ANTHROPIC_MODEL` | Default `claude-opus-4-8` |
 | `GOOGLE_CLIENT_ID` | Enables Google sign-in (ID-token verification) |
 | `APPLE_CLIENT_ID` | Placeholder for Sign in with Apple (needs Apple Developer credentials) |
-| `NODE_ENV=production` | Disables the dev outbox endpoint |
+| `NODE_ENV=production` | Disables the dev outbox endpoint; enables HSTS |
+| `ROWPOINT_TOKEN_SECRET` | Session-signing secret. Set it as an env var so sessions survive a disk migration (otherwise persisted to the data disk). |
+| `ROWPOINT_RESEARCH_SECRET` | Secret for deriving pseudonymous research IDs. Set as an env var for durability. |
+
+## Production hardening
+
+- **Session security**: HMAC-signed stateless tokens carry a per-user
+  `token_version`; `POST /api/auth/logout` and an admin password reset bump it,
+  invalidating every previously-issued token server-side (a leaked token can't
+  outlive a logout or reset). Missing versions default to 0 so the upgrade is
+  backward-compatible.
+- **Security headers**: a tuned `Content-Security-Policy` (same-origin;
+  inline styles only — no inline scripts; Google Identity + Fonts allowed;
+  `object-src 'none'`, `frame-ancestors 'none'`), `Permissions-Policy`
+  (`bluetooth=(self)`, everything else denied), `X-Content-Type-Options`,
+  `X-Frame-Options: DENY`, `Referrer-Policy`, `Cross-Origin-Opener-Policy`, and
+  `Strict-Transport-Security` in production.
+- **Data integrity**: each workout sync commits the workout, its splits, and
+  force curves in a single transaction (`inTransaction()` in `db.js`) — a
+  mid-write failure rolls back cleanly, never leaving a workout without splits.
+- **Observability**: `GET /api/healthz` is an unauthenticated readiness probe
+  that verifies the process **and** a live DB query (503 if the DB is down);
+  request latency (avg/max/slow-count) feeds the admin System tab; boot-time
+  warnings flag an ephemeral data directory before it silently wipes accounts.
 
 ## Engineering decisions (where the spec left room)
 

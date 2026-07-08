@@ -58,11 +58,40 @@ export function createApp() {
   app.disable('x-powered-by');
   app.use(express.json({ limit: '4mb' }));
 
-  // Basic security headers for the SPA.
+  // Security headers for the SPA. The CSP is tuned to exactly what RowPoint
+  // needs: same-origin everything, inline *styles* only (the UI uses style
+  // attributes; there are no inline scripts), the Google Identity script/iframe
+  // (only active when GOOGLE_CLIENT_ID is set), the Google Fonts CDN, and
+  // data:/https: images (avatars, chat images, user photos). This blocks the
+  // main XSS vectors while leaving Web Bluetooth (governed by Permissions-
+  // Policy below) intact.
+  const csp = [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "img-src 'self' data: blob: https:",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' https://fonts.gstatic.com",
+    "script-src 'self' https://accounts.google.com https://apis.google.com",
+    "connect-src 'self' https://accounts.google.com",
+    "frame-src https://accounts.google.com",
+    "worker-src 'self'",
+    "manifest-src 'self'",
+  ].join('; ');
   app.use((req, res, next) => {
+    res.setHeader('Content-Security-Policy', csp);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-DNS-Prefetch-Control', 'off');
+    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    // Deny powerful features the app never uses; allow Web Bluetooth to self
+    // (rowing machines + HR straps depend on it).
+    res.setHeader('Permissions-Policy', 'bluetooth=(self), geolocation=(), camera=(), microphone=(), payment=(), usb=(), accelerometer=(), gyroscope=()');
+    // HSTS only in production (over HTTPS) — never on localhost/dev.
+    if (!config.devMode) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();
   });
 
@@ -81,6 +110,19 @@ export function createApp() {
   app.use('/api/admin', adminRouter);
 
   app.get('/api/status', (req, res) => res.json({ ok: true, name: 'RowPoint', ts: Date.now() }));
+
+  // Readiness probe for load balancers / uptime monitors: verifies the process
+  // is up AND the database answers a trivial query. Returns 503 if the DB is
+  // unreachable so orchestrators can pull the instance out of rotation. No
+  // authentication and no sensitive data — safe to expose publicly.
+  app.get('/api/healthz', (req, res) => {
+    try {
+      db.prepare('SELECT 1 AS ok').get();
+      res.json({ ok: true, db: 'ok', uptimeSeconds: Math.round(process.uptime()) });
+    } catch (e) {
+      res.status(503).json({ ok: false, db: 'error', error: e.message });
+    }
+  });
 
   // Dev-only: expose the email outbox so verification flows are testable
   // without a real mail provider. Disabled entirely in production.

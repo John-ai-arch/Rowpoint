@@ -374,6 +374,12 @@ ensureColumn('users', 'resting_hr', 'resting_hr INTEGER');
 // the account matching config.ADMIN_EMAIL is promoted automatically below and
 // on signup/verify, so the owner account always has the Admin role.
 ensureColumn('users', 'role', "role TEXT NOT NULL DEFAULT 'user'");
+// Session-invalidation counter. Every issued token carries the version it was
+// minted under; bumping this (logout, password reset) invalidates all of a
+// user's existing tokens server-side without needing per-token state. Tokens
+// with no version (pre-migration) are treated as version 0, so existing
+// sessions keep working across the upgrade.
+ensureColumn('users', 'token_version', 'token_version INTEGER NOT NULL DEFAULT 0');
 // Separate, explicit consent for demographic fields (birth decade, weight
 // class) entering the research dataset — independent of the main research
 // toggle so athletes can contribute workouts without demographics.
@@ -560,6 +566,24 @@ if (!metaGet('instance_id')) {
 }
 metaSet('boot_count', Number(metaGet('boot_count') || 0) + 1);
 metaSet('last_boot_at', Math.floor(Date.now() / 1000));
+
+/**
+ * Run a set of synchronous DB writes atomically. node:sqlite has no
+ * better-sqlite3-style db.transaction(), so we drive BEGIN/COMMIT/ROLLBACK
+ * directly. The callback MUST be synchronous (no awaits) — a partial failure
+ * rolls the whole thing back so a workout never lands without its splits.
+ */
+export function inTransaction(fn) {
+  db.exec('BEGIN');
+  try {
+    const result = fn();
+    db.exec('COMMIT');
+    return result;
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch { /* already rolled back */ }
+    throw e;
+  }
+}
 
 /** Persistence facts for boot-time warnings and the admin System tab. */
 export function dbPersistenceInfo() {

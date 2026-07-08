@@ -157,7 +157,10 @@ export function renderSettings(el) {
     } catch (e) { toast(e.message, 'error'); }
   };
 
-  el.querySelector('#logoutBtn').onclick = () => {
+  el.querySelector('#logoutBtn').onclick = async () => {
+    // Invalidate the session server-side (token_version bump), then clear the
+    // local token. Best-effort: a network failure still logs out locally.
+    try { await api('/auth/logout', { method: 'POST' }); } catch { /* offline — local logout still applies */ }
     setSession(null, null);
     location.hash = '#/login';
     window.dispatchEvent(new Event('rp:navigate'));

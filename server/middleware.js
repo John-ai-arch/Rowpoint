@@ -13,6 +13,10 @@ export function getUserFromRequest(req) {
   if (!payload?.uid) return null;
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.uid);
   if (!user) return null;
+  // Session invalidation: a token minted before a logout / password reset
+  // carries an older token_version and is rejected here. (Missing tv → 0,
+  // matching the column default so pre-migration tokens still validate.)
+  if ((payload.tv ?? 0) !== (user.token_version ?? 0)) return null;
   if (user.suspended) return { suspended: true, user };
   return { user };
 }

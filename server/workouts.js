@@ -3,7 +3,7 @@
 // pacing classifier + AI feedback (§11.4), the research pipeline (§5.2),
 // leaderboard persistence (§2.4), group feed events (§4) and 2k PB tracking.
 import { Router } from 'express';
-import { db } from './db.js';
+import { db, inTransaction } from './db.js';
 import { authRequired, verifiedRequired } from './middleware.js';
 import { uuid, now, badRequest, ApiError, safeJson, clampNum, fmtSplit, todayStr } from './util.js';
 import { classifyPacing, classifyIntervals } from './ai/pacing.js';
@@ -71,27 +71,9 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
   // (avg/max/min, time-in-zone, drift) — and the raw series is discarded.
   const storeFullHrSeries = !!req.user.research_opt_in;
 
-  db.prepare(`INSERT INTO workouts (
-      id, user_id, assignment_id, assigned_by_coach_id, started_at, ended_at,
-      machine_type, machine_id, total_distance_m, total_time_s, avg_split_s,
-      avg_stroke_rate, avg_heart_rate, avg_power_watts, workout_plan_json,
-      hr_series_json, hr_zones_json, max_heart_rate, min_heart_rate, created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(b.id, req.user.id, assignment?.id || null, assignedByCoachId, startedAt,
-      Number(b.endedAt) || startedAt + Math.round(totalTime),
-      b.machineType || 'rower', b.machineId || null, totalDistance, totalTime, avgSplit,
-      // When a recorded HR series exists it is the single source of truth for
-      // this workout's HR stats (avg/max/min all from the same samples);
-      // split-level averages are the fallback for relay-only sessions.
-      wAvg('avgStrokeRate'), hr?.avg ?? wAvg('avgHeartRate') ?? null, wAvg('avgPowerWatts'),
-      plan ? JSON.stringify(plan) : null,
-      storeFullHrSeries && hrSeries.length ? JSON.stringify(hrSeries) : null,
-      hr ? JSON.stringify({ zoneSeconds: hr.zoneSeconds, maxHrUsed: hr.maxHrUsed, driftPct: hr.driftPct }) : null,
-      hr?.max ?? null, hr?.min ?? null, now());
-
-  const insSplit = db.prepare(`INSERT INTO splits
-      (id, workout_id, split_index, interval_index, distance_m, time_s, avg_pace_s_per_500m, avg_stroke_rate, avg_heart_rate, avg_power_watts)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`);
+  // Pure normalization first (no DB), then commit the workout + its splits +
+  // force curves as ONE atomic unit so a mid-write failure can never leave a
+  // workout without its splits (or vice versa).
   const normSplits = splits.map((s, i) => ({
     split_index: i,
     interval_index: Number.isFinite(Number(s.intervalIndex)) ? Number(s.intervalIndex) : null,
@@ -102,18 +84,42 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
     avg_heart_rate: clampNum(s.avgHeartRate, 0, 250),
     avg_power_watts: clampNum(s.avgPowerWatts, 0, 2500),
   }));
-  for (const s of normSplits) {
-    insSplit.run(uuid(), b.id, s.split_index, s.interval_index, s.distance_m, s.time_s,
-      s.avg_pace_s_per_500m, s.avg_stroke_rate, s.avg_heart_rate, s.avg_power_watts);
-  }
-
-  // Force curves (§6): one row per stroke, JSON sample arrays.
   const curves = Array.isArray(b.forceCurves) ? b.forceCurves.slice(0, 5000) : [];
-  const insCurve = db.prepare('INSERT INTO force_curves (id, workout_id, stroke_index, samples_json) VALUES (?,?,?,?)');
-  for (const c of curves) {
-    if (!Array.isArray(c?.samples)) continue;
-    insCurve.run(uuid(), b.id, Number(c.strokeIndex) || 0, JSON.stringify(c.samples.slice(0, 64).map(Number)));
-  }
+
+  inTransaction(() => {
+    db.prepare(`INSERT INTO workouts (
+        id, user_id, assignment_id, assigned_by_coach_id, started_at, ended_at,
+        machine_type, machine_id, total_distance_m, total_time_s, avg_split_s,
+        avg_stroke_rate, avg_heart_rate, avg_power_watts, workout_plan_json,
+        hr_series_json, hr_zones_json, max_heart_rate, min_heart_rate, created_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(b.id, req.user.id, assignment?.id || null, assignedByCoachId, startedAt,
+        Number(b.endedAt) || startedAt + Math.round(totalTime),
+        b.machineType || 'rower', b.machineId || null, totalDistance, totalTime, avgSplit,
+        // When a recorded HR series exists it is the single source of truth for
+        // this workout's HR stats (avg/max/min all from the same samples);
+        // split-level averages are the fallback for relay-only sessions.
+        wAvg('avgStrokeRate'), hr?.avg ?? wAvg('avgHeartRate') ?? null, wAvg('avgPowerWatts'),
+        plan ? JSON.stringify(plan) : null,
+        storeFullHrSeries && hrSeries.length ? JSON.stringify(hrSeries) : null,
+        hr ? JSON.stringify({ zoneSeconds: hr.zoneSeconds, maxHrUsed: hr.maxHrUsed, driftPct: hr.driftPct }) : null,
+        hr?.max ?? null, hr?.min ?? null, now());
+
+    const insSplit = db.prepare(`INSERT INTO splits
+        (id, workout_id, split_index, interval_index, distance_m, time_s, avg_pace_s_per_500m, avg_stroke_rate, avg_heart_rate, avg_power_watts)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`);
+    for (const s of normSplits) {
+      insSplit.run(uuid(), b.id, s.split_index, s.interval_index, s.distance_m, s.time_s,
+        s.avg_pace_s_per_500m, s.avg_stroke_rate, s.avg_heart_rate, s.avg_power_watts);
+    }
+
+    // Force curves (§6): one row per stroke, JSON sample arrays.
+    const insCurve = db.prepare('INSERT INTO force_curves (id, workout_id, stroke_index, samples_json) VALUES (?,?,?,?)');
+    for (const c of curves) {
+      if (!Array.isArray(c?.samples)) continue;
+      insCurve.run(uuid(), b.id, Number(c.strokeIndex) || 0, JSON.stringify(c.samples.slice(0, 64).map(Number)));
+    }
+  });
 
   /* ---- AI pacing feedback (§11.4) ---- */
   let classification = classifyPacing(normSplits);

@@ -969,6 +969,62 @@ test('achievements: workout sync reports newly-unlocked badges (idempotent)', as
   assert.ok(!second.body.newBadges.map(b => b.badge).includes('first_workout'), 'already-earned badges are not re-fired');
 });
 
+/* ---------------- production hardening: sessions, headers, health ---------------- */
+
+test('security: logout invalidates the session token server-side', async () => {
+  const s = await makeUser('logout@test.com');
+  assert.equal((await req('/workouts/', { token: s.token })).status, 200, 'token works before logout');
+  const out = await req('/auth/logout', { method: 'POST', token: s.token });
+  assert.equal(out.status, 200);
+  // the same token must now be rejected everywhere (token_version bumped)
+  assert.equal((await req('/workouts/', { token: s.token })).status, 401, 'old token rejected after logout');
+  assert.equal((await req('/auth/me', { token: s.token })).status, 401);
+  // logging back in issues a fresh, valid token
+  const back = await req('/auth/login', { method: 'POST', body: { email: 'logout@test.com', password: 'password123' } });
+  assert.ok(back.body.token && back.body.token !== s.token);
+  assert.equal((await req('/workouts/', { token: back.body.token })).status, 200);
+});
+
+test('security: admin password reset invalidates the user\'s existing sessions', async () => {
+  const victim = await makeUser('resetsession@test.com');
+  assert.equal((await req('/workouts/', { token: victim.token })).status, 200);
+  const r = await req(`/admin/users/${victim.user.id}/reset-password`, { method: 'POST', token: admin.token });
+  assert.equal(r.status, 200);
+  // the pre-reset token is now dead; the new temp password logs in fresh
+  assert.equal((await req('/workouts/', { token: victim.token })).status, 401, 'session killed by reset');
+  const relogin = await req('/auth/login', { method: 'POST', body: { email: 'resetsession@test.com', password: r.body.temporaryPassword } });
+  assert.ok(relogin.body.token);
+  assert.equal((await req('/workouts/', { token: relogin.body.token })).status, 200);
+});
+
+test('security: hardened headers are present (CSP, nosniff, frame options, permissions)', async () => {
+  const r = await fetch(`${BASE}/api/status`);
+  assert.match(r.headers.get('content-security-policy') || '', /default-src 'self'/);
+  assert.match(r.headers.get('content-security-policy') || '', /object-src 'none'/);
+  assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(r.headers.get('x-frame-options'), 'DENY');
+  assert.match(r.headers.get('permissions-policy') || '', /bluetooth=\(self\)/);
+  assert.equal(r.headers.get('x-powered-by'), null, 'express fingerprint suppressed');
+});
+
+test('observability: /api/healthz reports process + database health', async () => {
+  const r = await req('/healthz');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.ok, true);
+  assert.equal(r.body.db, 'ok');
+  assert.ok(typeof r.body.uptimeSeconds === 'number');
+});
+
+test('integrity: a transactional workout sync stores workout + all its splits together', async () => {
+  const p = await makeUser('txn@test.com');
+  const body = workoutBody([120, 121, 122, 123, 124]);
+  const s = await req('/workouts/sync', { method: 'POST', body, token: p.token });
+  assert.equal(s.status, 201);
+  const d = await req(`/workouts/${body.id}`, { token: p.token });
+  assert.equal(d.body.splits.length, 5, 'all splits committed with the workout');
+  assert.ok(d.body.workout.total_distance_m > 0);
+});
+
 test('daily suggested workouts have stable shareable ids (§7)', async () => {
   const a = await req('/workouts/daily/suggestions', { token: rower.token });
   const b = await req('/workouts/daily/suggestions', { token: rower2.token });

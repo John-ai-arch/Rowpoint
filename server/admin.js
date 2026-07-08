@@ -317,7 +317,9 @@ adminRouter.post('/users/:id/reset-password', (req, res) => {
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!u) throw new ApiError(404, 'User not found.', 'not_found');
   const temp = crypto.randomBytes(9).toString('base64url'); // 12 chars, URL-safe
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(temp), u.id);
+  // Resetting the password also invalidates every existing session for that
+  // account (token_version bump) — a leaked old token can't outlive a reset.
+  db.prepare('UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?').run(hashPassword(temp), u.id);
   audit(req.user.id, 'user.password.reset', u.email, null);
   recordAuthEvent('password_reset', { email: u.email, userId: u.id, detail: `reset by admin ${req.user.email}` });
   res.json({ ok: true, temporaryPassword: temp });

@@ -176,7 +176,7 @@ authRouter.post('/verify', rateLimit('verify', 30, 60 * 60 * 1000), (req, res) =
   promoteOwner(user.id, email);
   recordAuthEvent('verify', { email, userId: user.id });
   const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id);
-  res.json({ token: signToken({ uid: user.id }), user: publicUser(fresh) });
+  res.json({ token: signToken({ uid: user.id, tv: fresh.token_version }), user: publicUser(fresh) });
 });
 
 authRouter.post('/resend-verification', rateLimit('resend', 5, 60 * 60 * 1000), (req, res) => {
@@ -209,7 +209,18 @@ authRouter.post('/login', rateLimit('login', 20, 15 * 60 * 1000), (req, res) => 
     return res.json({ needsVerification: true, email: user.email, devCode: devCodeOrNull(code) });
   }
   recordAuthEvent('login_success', { email, userId: user.id });
-  res.json({ token: signToken({ uid: user.id }), user: publicUser(user) });
+  res.json({ token: signToken({ uid: user.id, tv: user.token_version }), user: publicUser(user) });
+});
+
+/* ---------------- logout (server-side session invalidation) ----------------
+   Stateless tokens can't be individually revoked, so logging out bumps the
+   user's token_version — every token issued before this moment stops
+   validating. A professional "sign out (all devices)" without per-token
+   state. The client also discards its local token. */
+authRouter.post('/logout', authRequired, (req, res) => {
+  db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').run(req.user.id);
+  recordAuthEvent('logout', { email: req.user.email, userId: req.user.id });
+  res.json({ ok: true });
 });
 
 /* ---------------- OAuth (Google / Apple) ----------------
@@ -256,7 +267,7 @@ function oauthLoginOrSignup(res, provider, identity, body) {
     throw new ApiError(403, 'This account has been suspended.', 'suspended');
   }
   recordAuthEvent('oauth_login', { email: identity.email, userId: fresh.id, detail: provider });
-  res.json({ token: signToken({ uid: fresh.id }), user: publicUser(fresh) });
+  res.json({ token: signToken({ uid: fresh.id, tv: fresh.token_version }), user: publicUser(fresh) });
 }
 
 authRouter.post('/oauth/google', async (req, res) => {
