@@ -85,6 +85,7 @@ export const de = {
     resetSubmit: 'Neues Passwort setzen',
     resetWeak: 'Wähle ein Passwort mit mindestens 8 Zeichen.',
     resetDone: 'Passwort aktualisiert – du bist angemeldet.',
+    appleUnavailable: 'Anmelden mit Apple ist derzeit nicht verfügbar.',
   },
   onboarding: {
     profileTitle: 'Profil & Trainingsziele',

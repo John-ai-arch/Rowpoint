@@ -76,9 +76,9 @@ export function createApp() {
     "img-src 'self' data: blob: https:",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self' https://fonts.gstatic.com",
-    "script-src 'self' https://accounts.google.com https://apis.google.com",
-    "connect-src 'self' https://accounts.google.com",
-    "frame-src https://accounts.google.com",
+    "script-src 'self' https://accounts.google.com https://apis.google.com https://appleid.cdn-apple.com",
+    "connect-src 'self' https://accounts.google.com https://appleid.apple.com",
+    "frame-src https://accounts.google.com https://appleid.apple.com",
     "worker-src 'self'",
     "manifest-src 'self'",
   ].join('; ');

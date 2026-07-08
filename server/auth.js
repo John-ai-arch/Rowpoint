@@ -2,6 +2,7 @@
 // cloud sync, Google OAuth and Sign in with Apple (both activate when the
 // provider client IDs are configured; the endpoints and account-linking logic
 // are fully implemented either way).
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import { db, inTransaction } from './db.js';
 import { config } from './config.js';
@@ -85,6 +86,7 @@ authRouter.get('/providers', (req, res) => {
     google: !!config.googleClientId,
     googleClientId: config.googleClientId,
     apple: !!config.appleClientId,
+    appleClientId: config.appleClientId,
     devMail: config.devMode && !mailConfigured(),
   });
 });
@@ -354,13 +356,45 @@ authRouter.post('/oauth/google', async (req, res) => {
   oauthLoginOrSignup(res, 'google', identity, req.body);
 });
 
+// Apple publishes its ID-token signing keys as a JWKS; cache them (Apple rotates
+// keys, so refresh periodically) and verify the RS256 signature locally.
+let appleKeys = { keys: null, at: 0 };
+async function applePublicKeys() {
+  if (appleKeys.keys && Date.now() - appleKeys.at < 6 * 3600 * 1000) return appleKeys.keys;
+  const r = await fetch('https://appleid.apple.com/auth/keys');
+  if (!r.ok) throw new ApiError(401, 'Could not reach Apple to verify the sign-in.', 'oauth_failed');
+  appleKeys = { keys: (await r.json()).keys, at: Date.now() };
+  return appleKeys.keys;
+}
+
+async function verifyAppleIdToken(idToken) {
+  const [h, p, s] = String(idToken).split('.');
+  if (!h || !p || !s) throw new ApiError(401, 'Malformed Apple token.', 'oauth_failed');
+  const header = JSON.parse(Buffer.from(h, 'base64url').toString('utf8'));
+  const jwk = (await applePublicKeys()).find(k => k.kid === header.kid && k.alg === (header.alg || 'RS256'));
+  if (!jwk) throw new ApiError(401, 'Unknown Apple signing key.', 'oauth_failed');
+  const pub = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+  const ok = crypto.verify('RSA-SHA256', Buffer.from(`${h}.${p}`), pub, Buffer.from(s, 'base64url'));
+  if (!ok) throw new ApiError(401, 'Apple token signature is invalid.', 'oauth_failed');
+  const c = JSON.parse(Buffer.from(p, 'base64url').toString('utf8'));
+  if (c.iss !== 'https://appleid.apple.com') throw new ApiError(401, 'Apple token issuer mismatch.', 'oauth_failed');
+  const aud = Array.isArray(c.aud) ? c.aud : [c.aud];
+  if (!aud.includes(config.appleClientId)) throw new ApiError(401, 'Apple token audience mismatch.', 'oauth_failed');
+  if (!c.exp || c.exp < now()) throw new ApiError(401, 'Apple token has expired.', 'oauth_failed');
+  // Apple sends the email only on the first authorization; fall back to the
+  // stable private-relay address so account linking always has an identity.
+  return { sub: c.sub, email: String(c.email || `${c.sub}@privaterelay.appleid.com`).toLowerCase(), name: 'Apple user' };
+}
+
 authRouter.post('/oauth/apple', async (req, res) => {
   if (!config.appleClientId) {
-    throw new ApiError(501, 'Sign in with Apple is not configured on this server. Set APPLE_CLIENT_ID to enable it.', 'oauth_unconfigured');
+    throw new ApiError(501, 'Sign in with Apple is not configured on this server. Set APPLE_CLIENT_ID (your Services ID) to enable it.', 'oauth_unconfigured');
   }
-  // Apple ID tokens are JWTs verified against Apple's JWKS. Implementation
-  // mirrors verifyGoogleIdToken; requires the configured Services ID.
-  throw new ApiError(501, 'Sign in with Apple requires Apple Developer credentials; wire APPLE_CLIENT_ID + key verification before launch.', 'oauth_unconfigured');
+  requireFields(req.body || {}, ['idToken']);
+  const identity = await verifyAppleIdToken(req.body.idToken);
+  // Apple returns the user's name only on first sign-in; the client forwards it.
+  if (req.body.displayName) identity.name = String(req.body.displayName).slice(0, 80);
+  oauthLoginOrSignup(res, 'apple', identity, req.body);
 });
 
 /* ---------------- session ---------------- */

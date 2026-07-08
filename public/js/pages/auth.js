@@ -168,6 +168,72 @@ export async function renderAuth(el) {
     });
   }
 
+  /* ---------------- Sign in with Apple ---------------- */
+
+  function loadAppleSdk() {
+    return new Promise((resolve, reject) => {
+      if (window.AppleID?.auth) return resolve();
+      const existing = document.getElementById('appleSdk');
+      if (existing) { existing.addEventListener('load', resolve); existing.addEventListener('error', () => reject(new Error('load failed'))); return; }
+      const s = document.createElement('script');
+      s.id = 'appleSdk';
+      s.src = 'https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js';
+      s.async = true;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('Apple sign-in could not load — check your connection.'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function handleAppleSignIn() {
+    if (!providers.apple || !providers.appleClientId) { toast(t('auth.appleUnavailable'), 'error', 6000); return; }
+    try {
+      await loadAppleSdk();
+      window.AppleID.auth.init({ clientId: providers.appleClientId, scope: 'name email', redirectURI: location.origin, usePopup: true });
+      const resp = await window.AppleID.auth.signIn();
+      const idToken = resp?.authorization?.id_token;
+      if (!idToken) throw new Error('No Apple identity token was returned.');
+      // Apple only provides the name on the very first authorization.
+      const nm = resp?.user?.name;
+      const displayName = nm ? [nm.firstName, nm.lastName].filter(Boolean).join(' ') : undefined;
+      const res = await api('/auth/oauth/apple', { method: 'POST', body: { idToken, displayName } });
+      if (res.needsProfile) { showAppleProfile(idToken, res.suggestedName, res.email); return; }
+      finish(res, t('auth.welcome', { name: res.user.displayName }));
+    } catch (e) {
+      if (e?.error === 'popup_closed_by_user' || e?.error === 'user_cancelled_authorize') return;
+      toast(e.message || 'Apple sign-in failed.', 'error', 6000);
+    }
+  }
+
+  function showAppleProfile(idToken, suggestedName, email) {
+    el.innerHTML = `<div class="auth-wrap"><div class="card">
+      <h2>${esc(t('onboarding.oauthAlmost'))}</h2>
+      <p class="muted small">${esc(t('onboarding.oauthSigningUp', { email: email || 'your Apple ID' }))}</p>
+      <label class="field"><span>${esc(t('auth.iAmA'))}</span>
+        <div class="seg"><button type="button" data-atype="rower" class="on">${esc(t('auth.rower'))}</button><button type="button" data-atype="coach">${esc(t('auth.coach'))}</button></div></label>
+      <label class="field"><span>${esc(t('auth.displayName'))}</span><input id="aName" value="${esc(suggestedName || '')}"></label>
+      <div class="toggle"><div><strong>${esc(t('onboarding.researchToggle'))}</strong>
+        <p class="muted small">${esc(t('onboarding.researchSeparate'))}</p></div>
+        <label class="switch"><input type="checkbox" id="aResearch" checked><span class="sl"></span></label></div>
+      <button id="aCreate" style="width:100%">${esc(t('auth.createAccountCta'))}</button>
+    </div></div>`;
+    let atype = 'rower';
+    el.querySelectorAll('[data-atype]').forEach(b => b.onclick = () => {
+      el.querySelectorAll('[data-atype]').forEach(x => x.classList.remove('on'));
+      b.classList.add('on'); atype = b.dataset.atype;
+    });
+    el.querySelector('#aCreate').onclick = async () => {
+      try {
+        const res = await api('/auth/oauth/apple', { method: 'POST', body: {
+          idToken, accountType: atype,
+          displayName: el.querySelector('#aName').value.trim(),
+          researchOptIn: el.querySelector('#aResearch').checked,
+        } });
+        finish(res, t('auth.welcome', { name: res.user.displayName }));
+      } catch (e) { toast(e.message, 'error', 6000); }
+    };
+  }
+
   /* ---------------- wiring ---------------- */
 
   function wire() {
@@ -175,10 +241,7 @@ export async function renderAuth(el) {
     el.querySelectorAll('[data-type]').forEach(b => b.onclick = () => { data.accountType = b.dataset.type; draw(); });
     mountGoogleButton();
 
-    el.querySelector('#appleBtn')?.addEventListener('click', async () => {
-      try { await api('/auth/oauth/apple', { method: 'POST', body: { idToken: 'unavailable' } }); }
-      catch (e) { toast(e.message, 'error', 6000); }
-    });
+    el.querySelector('#appleBtn')?.addEventListener('click', () => handleAppleSignIn());
 
     el.querySelector('#loginBtn')?.addEventListener('click', async () => {
       try {
