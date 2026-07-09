@@ -92,6 +92,17 @@ function draw(el, p, quality, dist, corr, trends) {
     ${trends.points.length ? `<div class="card"><h3>Weekly volume — dataset median over time</h3>
       <canvas id="trendCanvas"></canvas><p class="muted small">Weeks below the minimum cohort are omitted.</p></div>` : ''}
 
+    <div class="card"><h3>Export dataset</h3>
+      <p class="muted small">Anonymized CSV (Excel-compatible) or JSON, with a reproducibility manifest + data dictionary. Exports revealing fewer than ${p.minCohort} participants are refused. Every export is audited.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        ${['workouts', 'participants', 'snapshots'].map(k => `
+          <span class="row" style="gap:4px"><button class="secondary sm" data-export="${k}" data-fmt="csv">${k} CSV</button>
+            <button class="ghost sm" data-export="${k}" data-fmt="json">JSON</button></span>`).join('')}
+      </div>
+      <div class="row mt"><button class="ghost sm" id="dictBtn">View data dictionary</button></div>
+      <div id="exportMsg" class="small muted mt"></div>
+    </div>
+
     <p class="muted small">Observational data. Distinguishes measured / derived / estimated variables; associations are never causal claims. Every view here is written to the research audit log.</p>`;
 
   el.querySelector('#apply').onclick = () => {
@@ -99,6 +110,27 @@ function draw(el, p, quality, dist, corr, trends) {
     renderResearchDashboard(el);
   };
   el.querySelector('#clear').onclick = () => { Object.keys(filters).forEach(k => delete filters[k]); renderResearchDashboard(el); };
+
+  const q = query();
+  el.querySelectorAll('[data-export]').forEach(b => b.onclick = async () => {
+    const msg = el.querySelector('#exportMsg'); msg.textContent = 'Preparing export…';
+    try {
+      const sep = q ? '&' : '?';
+      const r = await api(`/research-admin/export${q}${sep}kind=${b.dataset.export}&format=${b.dataset.fmt}`, { raw: true });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); msg.textContent = e.message || `Export failed (${r.status})`; return; }
+      const blob = await r.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (r.headers.get('content-disposition') || '').match(/filename="(.+?)"/)?.[1] || `research-${b.dataset.export}.${b.dataset.fmt}`;
+      a.click(); URL.revokeObjectURL(a.href);
+      msg.textContent = 'Exported.';
+    } catch (e) { msg.textContent = e.message; }
+  });
+  el.querySelector('#dictBtn').onclick = async () => {
+    const { dictionary } = await api('/research-admin/dictionary');
+    const blob = new Blob([JSON.stringify(dictionary, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'rowpoint-data-dictionary.json'; a.click(); URL.revokeObjectURL(a.href);
+  };
 
   requestAnimationFrame(() => {
     if (!dist.suppressed) for (const k of ['weeklyMeters', 'acuteChronicWorkloadRatio', 'trainingMonotony', 'consistencyScore']) {

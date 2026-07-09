@@ -1582,6 +1582,38 @@ test('research platform: quality, correlations, and audit are aggregate-only wit
   assert.ok(!JSON.stringify(a.body.audit).includes('@'), 'no emails in the research audit payload');
 });
 
+test('research export: anonymized CSV/JSON + auto data dictionary, owner-only, min-cohort enforced', async () => {
+  // auto data dictionary stays in sync with the engine
+  const d = await req('/research-admin/dictionary', { token: admin.token });
+  assert.equal(d.status, 200);
+  assert.ok(d.body.dictionary.derivedVariables.weeklyMeters && d.body.dictionary.rawWorkoutFields.research_id);
+  assert.ok(Array.isArray(d.body.dictionary.limitations) && d.body.dictionary.missingValueCoding);
+
+  // CSV export: reproducibility header, no PII, download disposition
+  const r = await fetch(`${BASE}/api/research-admin/export?kind=workouts&format=csv`, { headers: { Authorization: `Bearer ${admin.token}` } });
+  assert.equal(r.status, 200);
+  const csv = await r.text();
+  assert.match(csv, /# RowPoint research export/);
+  assert.match(csv, /software_version:/);
+  assert.ok(!csv.includes('@'), 'no emails in the CSV export');
+  assert.match(r.headers.get('content-disposition') || '', /attachment; filename=/);
+
+  // JSON export carries manifest + data dictionary + rows, PII-free
+  const rj = await fetch(`${BASE}/api/research-admin/export?kind=participants&format=json`, { headers: { Authorization: `Bearer ${admin.token}` } });
+  const jj = await rj.json();
+  assert.ok(jj.manifest && jj.dataDictionary && Array.isArray(jj.rows));
+  assert.equal(jj.manifest.minCohort, 8);
+  assert.ok(!JSON.stringify(jj).includes('@'), 'no emails in the JSON export');
+
+  // privacy: an export that would isolate a tiny group is refused
+  const tiny = await req('/research-admin/export?kind=participants&country=Atlantis', { token: admin.token });
+  assert.equal(tiny.status, 422);
+  assert.equal(tiny.body.error, 'cohort_too_small');
+
+  // only research admins may export
+  assert.equal((await req('/research-admin/export?kind=workouts', { token: rower.token })).status, 403);
+});
+
 test('research admin grant is owner-only', async () => {
   const target = await makeUser('research-grantee@test.com', 'coach');
   assert.equal((await req(`/admin/users/${target.user.id}/research-admin`, { method: 'POST', token: rower.token, body: { grant: true } })).status, 403, 'non-admin cannot grant');

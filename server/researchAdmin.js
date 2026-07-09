@@ -11,6 +11,8 @@ import {
   participantSummary, qualityReport, variableDistributions,
   correlationMatrix, longitudinalTrends,
 } from './research/analytics.js';
+import { dataDictionary } from './research/dictionary.js';
+import { buildExport } from './research/export.js';
 
 export const researchAdminRouter = Router();
 researchAdminRouter.use(authRequired, researchAdminRequired);
@@ -53,6 +55,25 @@ researchAdminRouter.get('/trends', (req, res) => {
   const variable = String(req.query.variable || 'weeklyMeters');
   log(req, 'trends.view', { variable });
   res.json({ trends: longitudinalTrends(variable) });
+});
+
+// Auto-generated data dictionary (variable definitions, units, methods).
+researchAdminRouter.get('/dictionary', (req, res) => {
+  log(req, 'dictionary.view');
+  res.json({ dictionary: dataDictionary() });
+});
+
+// Anonymized dataset export (CSV / JSON). Only research admins; refuses exports
+// that would reveal fewer than the minimum cohort. Every export is audited.
+researchAdminRouter.get('/export', (req, res) => {
+  const kind = ['workouts', 'participants', 'snapshots'].includes(req.query.kind) ? req.query.kind : 'workouts';
+  const format = req.query.format === 'json' ? 'json' : 'csv';
+  const f = filters(req.query);
+  const out = buildExport({ kind, format, filters: f }); // throws 422 if cohort too small
+  audit(req.user.id, 'research.export', kind, { format, filters: f, rows: out.body.length });
+  res.setHeader('Content-Type', out.contentType);
+  res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+  res.send(out.body);
 });
 
 // The research audit trail itself (research.* entries only).

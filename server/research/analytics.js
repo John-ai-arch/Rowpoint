@@ -17,6 +17,8 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 let cache = { at: 0, pop: null };
 
 export function invalidateResearchCache() { cache = { at: 0, pop: null }; }
+export const RESEARCH_MIN_COHORT = MIN_COHORT;
+export function researchPopulation() { return population(); }
 
 // The numeric research variables exposed to distributions/correlations. Kept in
 // one place so the dashboard, exports, and data dictionary stay consistent.
