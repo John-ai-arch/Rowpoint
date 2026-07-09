@@ -330,6 +330,13 @@ export const de = {
     conf_medium: 'Mittlere Sicherheit',
     conf_low: 'Geringe Sicherheit',
   },
+  timeline: {
+    title: 'Leistungs-Zeitleiste',
+    open: 'Zeitleiste',
+    subtitle: '{n} Meilensteine auf deiner Ruder-Reise.',
+    empty: 'Deine Zeitleiste wächst, während du ruderst, PRs erzielst und Erfolge freischaltest.',
+    startRowing: 'Rudere deine erste Einheit',
+  },
   equip: {
     title: 'Ausrüstung',
     subtitle: 'Deine Ausrüstung, Wartung und Nutzung pro Ergometer.',

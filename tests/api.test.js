@@ -1376,6 +1376,23 @@ test('journal: workouts carry the AI coaching summary and an editable, searchabl
   assert.equal((await req(`/workouts/${body.id}/note`, { method: 'PATCH', token: other.token, body: { note: 'x' } })).status, 404);
 });
 
+/* ---------------- performance timeline ---------------- */
+
+test('timeline: merges first row, milestones, PRs, and achievements chronologically', async () => {
+  const u = await makeUser('timeline@test.com');
+  await req('/workouts/sync', { method: 'POST', token: u.token, body: workoutBody([110, 111, 112, 113], { plan: { type: 'distance', distanceM: 2000 } }) });
+  const r = await req('/me/timeline', { token: u.token });
+  assert.equal(r.status, 200);
+  const ev = r.body.timeline;
+  assert.ok(ev.length >= 2);
+  assert.ok(ev.every(e => typeof e.at === 'number' && e.title && e.type), 'well-formed events');
+  // sorted newest → oldest
+  for (let i = 1; i < ev.length; i++) assert.ok(ev[i - 1].at >= ev[i].at, 'chronological order');
+  assert.ok(ev.some(e => e.type === 'milestone' && /First row/.test(e.title)), 'first-row milestone present');
+  assert.ok(ev.some(e => e.type === 'pr' && /2k/.test(e.title)), '2k PR event present');
+  assert.ok(ev.some(e => e.type === 'achievement'), 'achievement event present');
+});
+
 /* ---------------- equipment management ---------------- */
 
 test('equipment: CRUD, account scoping, and per-machine usage from workouts', async () => {

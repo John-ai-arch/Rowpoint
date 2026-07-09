@@ -27,6 +27,51 @@ function monthStartS(t) {
   return Math.floor(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000);
 }
 
+function fmtTime(totalS) {
+  if (!Number.isFinite(totalS) || totalS <= 0) return '—';
+  totalS = Math.round(totalS);
+  const m = Math.floor(totalS / 60), s = totalS % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/* Interactive performance timeline (vision #7): a merged, chronological stream
+   of the athlete's milestones — first row, distance milestones, PRs,
+   achievements, and training plans — from existing data only. */
+progressRouter.get('/timeline', (req, res) => {
+  const uid = req.user.id;
+  const events = [];
+
+  for (const a of db.prepare('SELECT badge, label, achieved_at FROM user_achievements WHERE user_id = ? ORDER BY achieved_at').all(uid))
+    events.push({ type: 'achievement', at: a.achieved_at, title: a.label, detail: 'Achievement unlocked', icon: BADGE_ICONS[a.badge] || '🏅' });
+
+  const ws = db.prepare('SELECT started_at, total_distance_m FROM workouts WHERE user_id = ? AND started_at IS NOT NULL ORDER BY started_at').all(uid);
+  if (ws.length) {
+    events.push({ type: 'milestone', at: ws[0].started_at, title: 'First row logged', detail: 'Your journey began', icon: '🚣' });
+    const MIL = [100000, 250000, 500000, 1000000, 2000000, 5000000, 10000000];
+    let cum = 0, mi = 0;
+    for (const w of ws) {
+      cum += w.total_distance_m || 0;
+      while (mi < MIL.length && cum >= MIL[mi]) {
+        const label = MIL[mi] >= 1e6 ? `${MIL[mi] / 1e6}M` : `${MIL[mi] / 1000}k`;
+        events.push({ type: 'milestone', at: w.started_at, title: `${label} lifetime metres`, detail: 'Distance milestone', icon: '📏' });
+        mi++;
+      }
+    }
+  }
+
+  const pr = (sql, label) => {
+    const r = db.prepare(`SELECT total_time_s AS t, started_at AS at FROM workouts WHERE user_id = ? AND ${sql} ORDER BY total_time_s ASC LIMIT 1`).get(uid);
+    if (r) events.push({ type: 'pr', at: r.at, title: `${label} personal best`, detail: fmtTime(r.t), icon: '⚡' });
+  };
+  pr(TEST.best2k, '2k'); pr(TEST.best5k, '5k'); pr(TEST.best6k, '6k');
+
+  for (const p of db.prepare('SELECT name, goal_event, total_weeks, created_at FROM training_plans WHERE user_id = ? ORDER BY created_at').all(uid))
+    events.push({ type: 'plan', at: p.created_at, title: `Started a ${p.total_weeks}-week plan`, detail: p.goal_event || p.name, icon: '🗓️' });
+
+  events.sort((a, b) => b.at - a.at);
+  res.json({ timeline: events });
+});
+
 progressRouter.get('/progress', (req, res) => {
   const uid = req.user.id;
   const t = Math.floor(Date.now() / 1000);

@@ -329,6 +329,13 @@ export const en = {
     conf_medium: 'Moderate confidence',
     conf_low: 'Low confidence',
   },
+  timeline: {
+    title: 'Performance timeline',
+    open: 'Timeline',
+    subtitle: '{n} milestones on your rowing journey.',
+    empty: 'Your timeline builds as you row, hit PRs, and earn achievements.',
+    startRowing: 'Row your first piece',
+  },
   equip: {
     title: 'Equipment',
     subtitle: 'Your gear, maintenance, and per-erg usage.',
