@@ -617,6 +617,31 @@ CREATE TABLE IF NOT EXISTS training_plans (
 CREATE INDEX IF NOT EXISTS idx_training_plans_user ON training_plans(user_id, status);
 `);
 
+/* -------------------- equipment management (vision #8) --------------------
+   The athlete's gear: ergs, HR monitors, boats, oars, shoes, etc., with
+   maintenance + battery-reminder notes. Per-erg usage totals are derived from
+   workouts.machine_id, so tagging equipment with a machine id surfaces "meters
+   on this erg" without any duplicate storage. */
+db.exec(`
+CREATE TABLE IF NOT EXISTS equipment (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,                   -- erg|hrm|boat|oars|shoes|other
+  name TEXT NOT NULL,
+  brand TEXT,
+  model TEXT,
+  serial TEXT,
+  machine_id TEXT,                      -- optional link to a BLE peripheral (per-erg totals)
+  purchased_on TEXT,
+  battery_changed_on TEXT,
+  maintenance_note TEXT,
+  retired INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_equipment_user ON equipment(user_id, retired);
+`);
+
 /* -------------------- database identity & boot tracking --------------------
    One row of instance metadata lets the app (and the admin System tab) prove
    whether storage is actually persistent: the instance id and created_at
@@ -646,7 +671,7 @@ metaSet('last_boot_at', Math.floor(Date.now() / 1000));
    gate for any *destructive* future migration (which must branch on the stored
    version rather than run unconditionally). Bump it whenever the schema
    changes. */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const priorSchema = Number(metaGet('schema_version') || 0);
 if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
 export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };

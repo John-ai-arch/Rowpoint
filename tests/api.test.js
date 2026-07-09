@@ -1376,6 +1376,37 @@ test('journal: workouts carry the AI coaching summary and an editable, searchabl
   assert.equal((await req(`/workouts/${body.id}/note`, { method: 'PATCH', token: other.token, body: { note: 'x' } })).status, 404);
 });
 
+/* ---------------- equipment management ---------------- */
+
+test('equipment: CRUD, account scoping, and per-machine usage from workouts', async () => {
+  const u = await makeUser('equip@test.com');
+  // a workout on a specific BLE machine → per-machine usage
+  await req('/workouts/sync', { method: 'POST', token: u.token, body: workoutBody([120, 120, 120, 120], { machineId: 'PM5-12345' }) });
+
+  const created = await req('/equipment', { method: 'POST', token: u.token, body: { type: 'erg', name: 'Home Model D', brand: 'Concept2', model: 'D', machineId: 'PM5-12345' } });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.equipment.type, 'erg');
+  const id = created.body.equipment.id;
+
+  const list = await req('/equipment', { token: u.token });
+  assert.ok(list.body.equipment.some(e => e.id === id));
+  assert.ok(list.body.machineUsage.some(m => m.machineId === 'PM5-12345' && m.meters > 0), 'per-erg usage derived from workouts');
+
+  const patched = await req(`/equipment/${id}`, { method: 'PATCH', token: u.token, body: { maintenanceNote: 'Chain oiled', batteryChangedOn: '2026-01-01' } });
+  assert.equal(patched.body.equipment.maintenanceNote, 'Chain oiled');
+
+  assert.equal((await req('/equipment', { method: 'POST', token: u.token, body: { type: 'nope', name: 'x' } })).status, 400, 'unknown type rejected');
+
+  // Account scoping: another user cannot see or mutate it.
+  const other = await makeUser('equip-other@test.com');
+  assert.ok(!(await req('/equipment', { token: other.token })).body.equipment.some(e => e.id === id));
+  assert.equal((await req(`/equipment/${id}`, { method: 'PATCH', token: other.token, body: { name: 'hax' } })).status, 404);
+  assert.equal((await req(`/equipment/${id}`, { method: 'DELETE', token: other.token })).status, 404);
+
+  assert.equal((await req(`/equipment/${id}`, { method: 'DELETE', token: u.token })).status, 200);
+  assert.ok(!(await req('/equipment', { token: u.token })).body.equipment.some(e => e.id === id));
+});
+
 /* ---------------- analytics laboratory ---------------- */
 
 test('analytics lab: builds scatter datasets, zone distribution, and 12-week load', async () => {

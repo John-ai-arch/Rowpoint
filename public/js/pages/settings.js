@@ -65,6 +65,12 @@ export function renderSettings(el) {
   </div>
 
   <div class="card">
+    <h3>${esc(t('equip.title'))}</h3>
+    <p class="muted small">${esc(t('equip.settingsHint'))}</p>
+    <a class="btn secondary" href="#/equipment">🧰 ${esc(t('equip.manage'))}</a>
+  </div>
+
+  <div class="card">
     <h3>${esc(t('settings.yourData'))}</h3>
     <div class="row">
       <button class="secondary" id="exportBtn">${esc(t('settings.exportCsv'))}</button>
