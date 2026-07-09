@@ -47,6 +47,8 @@ export async function renderProgress(el) {
 
     ${perf ? perfHtml(perf) : ''}
 
+    ${livingGoalsHtml(data.goalsLiving)}
+
     <div class="grid cols2">
       <div class="card">
         <h3>${esc(t('progress.weeklyGoal'))}</h3>
@@ -215,6 +217,24 @@ function perfHtml(perf) {
     : `<div class="empty"><span class="ic" aria-hidden="true">📈</span><p class="muted small">${esc(pr.reason)}</p></div>`}
     </div>
   </div>`;
+}
+
+/* Living goals: each shows progress, a projected outcome, and an ETA. */
+function livingGoalsHtml(g) {
+  if (!g) return '';
+  const w = g.weekly, m = g.lifetimeMilestone, k = g.best2k;
+  const bar = (pct) => `<div class="pbar" style="margin:8px 0"><span style="width:${Math.min(100, pct || 0)}%"></span></div>`;
+  const block = (inner) => `<div style="padding:12px;background:var(--bg2);border-radius:12px">${inner}</div>`;
+  const milestoneLabel = m.target / 1000000 >= 1 ? `${m.target / 1000000}M` : `${m.target / 1000}k`;
+  let cards = block(`<div class="row" style="justify-content:space-between;align-items:center"><strong class="small">${esc(t('goals.weekly'))}</strong>
+    ${w.onTrack === null ? '' : `<span class="badge ${w.onTrack ? 'good' : 'amber'}">${w.onTrack ? esc(t('goals.onTrack')) : esc(t('goals.behind'))}</span>`}</div>
+    ${bar(w.pct)}<div class="small muted">${fmtDistance(w.current)} / ${fmtDistance(w.target)} · ${esc(t('goals.projected'))} ${fmtDistance(w.projectedEndOfWeek)}</div>`);
+  cards += block(`<div class="row" style="justify-content:space-between;align-items:center"><strong class="small">${esc(t('goals.nextMilestone'))}</strong><span class="badge">${milestoneLabel} m</span></div>
+    ${bar(m.pct)}<div class="small muted">${fmtDistance(m.toGo)} ${esc(t('goals.toGo'))}${m.etaWeeks ? ` · ${esc(t('goals.eta', { n: m.etaWeeks }))}` : ''}</div>`);
+  if (k.target) cards += block(`<div class="row" style="justify-content:space-between;align-items:center"><strong class="small">${esc(t('goals.goal2k'))}</strong>
+    ${k.achieved ? `<span class="badge good">${esc(t('goals.achieved'))}</span>` : ''}</div>
+    <div class="small muted" style="margin-top:10px">${k.current ? fmtSplit(k.current / 4) : '–'} → <strong>${fmtSplit(k.target / 4)}</strong> /500m</div>`);
+  return `<div class="card"><h3>${esc(t('goals.title'))}</h3><div class="grid cols3" style="gap:10px">${cards}</div></div>`;
 }
 
 function readinessRing(score, color) {

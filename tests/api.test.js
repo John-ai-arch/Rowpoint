@@ -943,6 +943,10 @@ test('progress: /api/me/progress aggregates totals, streak, PRs, badges from rea
   assert.ok(typeof g.records.longestStreakDays === 'number', 'longest-streak PR present');
   assert.ok('highestWatts' in g.records && 'biggestMonthMeters' in g.records, 'watts + month PRs present');
   assert.equal(g.calendar.length, 84, '12-week consistency calendar');
+  // Living goals: progress + projection + next lifetime milestone with ETA.
+  assert.ok(g.goalsLiving && g.goalsLiving.weekly && typeof g.goalsLiving.weekly.projectedEndOfWeek === 'number', 'weekly goal projection');
+  assert.ok(g.goalsLiving.lifetimeMilestone.target > g.totals.meters, 'next milestone is ahead of current total');
+  assert.ok('etaWeeks' in g.goalsLiving.lifetimeMilestone && 'best2k' in g.goalsLiving, 'ETA + 2k goal present');
   assert.ok(g.goals.weeklySessions === 3, 'reuses the existing weekly session goal');
   // badges include the full catalog with unlocked flags; personal ones fired
   const unlocked = g.badges.filter(b => b.unlocked).map(b => b.badge);

@@ -124,6 +124,39 @@ progressRouter.get('/progress', (req, res) => {
   const goalMeters = req.user.goal_weekly_meters
     || (goalMinutes ? Math.round(goalMinutes * 60 / 135 * 500) : 10000);
 
+  // Living goals (vision #11): each goal shows progress, a projected outcome,
+  // and an estimated completion — computed from the athlete's real rate.
+  const daysElapsed = Math.min(7, Math.floor((t - ws) / DAY) + 1);
+  const projectedWeekMeters = Math.round((week.meters / Math.max(1, daysElapsed)) * 7);
+  const rate8wk = db.prepare(
+    'SELECT COALESCE(SUM(total_distance_m),0) m FROM workouts WHERE user_id = ? AND started_at >= ?')
+    .get(uid, t - 56 * DAY).m / 8;
+  const MILESTONES = [100000, 250000, 500000, 1000000, 2000000, 5000000, 10000000, 25000000];
+  const nextMilestone = MILESTONES.find(m => m > totals.meters) || Math.ceil((totals.meters + 1) / 5000000) * 5000000;
+  const milestoneToGo = Math.round(nextMilestone - totals.meters);
+  const goalsLiving = {
+    weekly: {
+      current: Math.round(week.meters), target: goalMeters,
+      pct: goalMeters ? Math.min(100, Math.round((week.meters / goalMeters) * 100)) : null,
+      projectedEndOfWeek: projectedWeekMeters,
+      onTrack: goalMeters ? projectedWeekMeters >= goalMeters : null,
+      daysElapsed,
+      sessions: { current: week.workouts, target: goalSessions },
+    },
+    lifetimeMilestone: {
+      target: nextMilestone, current: Math.round(totals.meters), toGo: milestoneToGo,
+      pct: Math.round((totals.meters / nextMilestone) * 100),
+      avgWeeklyMeters: Math.round(rate8wk),
+      etaWeeks: rate8wk > 500 ? Math.ceil(milestoneToGo / rate8wk) : null,
+    },
+    best2k: {
+      current: req.user.best_2k_seconds || null,
+      target: req.user.goal_2k_seconds || null,
+      achieved: (req.user.best_2k_seconds && req.user.goal_2k_seconds)
+        ? req.user.best_2k_seconds <= req.user.goal_2k_seconds : null,
+    },
+  };
+
   // badges — full catalog with unlocked/locked state
   const unlocked = badgesFor(uid);
   const unlockedMap = Object.fromEntries(unlocked.map(b => [b.badge, b.achieved_at]));
@@ -148,6 +181,7 @@ progressRouter.get('/progress', (req, res) => {
       calendar,
       trend,
       goals: { weeklyMeters: goalMeters, weeklySessions: goalSessions, weeklyMinutes: goalMinutes },
+      goalsLiving,
       improvement: {
         metersDelta: Math.round(week.meters - prevWeekOnly.meters),
         workoutsDelta: week.workouts - prevWeekOnly.workouts,
