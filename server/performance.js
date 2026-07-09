@@ -4,10 +4,16 @@ import { Router } from 'express';
 import { authRequired } from './middleware.js';
 import { buildTrainingAnalysis } from './ai/trainingAnalysis.js';
 import { readinessScore, racePredictions } from './ai/performance.js';
+import { buildTrainingLab } from './ai/lab.js';
 import { now } from './util.js';
 
 export const performanceRouter = Router();
 performanceRouter.use(authRequired);
+
+// Personal Analytics Laboratory datasets (scatter, zones, weekly load).
+performanceRouter.get('/lab', (req, res) => {
+  res.json({ lab: buildTrainingLab(req.user, now()) });
+});
 
 performanceRouter.get('/readiness', (req, res) => {
   const analysis = buildTrainingAnalysis(req.user, now());

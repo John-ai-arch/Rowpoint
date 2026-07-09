@@ -1376,6 +1376,22 @@ test('journal: workouts carry the AI coaching summary and an editable, searchabl
   assert.equal((await req(`/workouts/${body.id}/note`, { method: 'PATCH', token: other.token, body: { note: 'x' } })).status, 404);
 });
 
+/* ---------------- analytics laboratory ---------------- */
+
+test('analytics lab: builds scatter datasets, zone distribution, and 12-week load', async () => {
+  const u = await makeUser('lab@test.com', 'rower', { best2kSeconds: 400 });
+  await req('/workouts/sync', { method: 'POST', token: u.token, body: workoutBody([118, 119, 120, 121]) });
+  await req('/workouts/sync', { method: 'POST', token: u.token, body: workoutBody([140, 141, 142]) });
+  const r = await req('/performance/lab', { token: u.token });
+  assert.equal(r.status, 200);
+  const lab = r.body.lab;
+  assert.equal(lab.hasData, true);
+  assert.ok(lab.scatter.length >= 2 && 'split' in lab.scatter[0] && 'rate' in lab.scatter[0] && 'zone' in lab.scatter[0]);
+  assert.ok(lab.zonePct && typeof lab.aerobicPct === 'number');
+  assert.equal(lab.weeklyLoad.length, 12, '12-week load series');
+  assert.ok(lab.weeklyLoad[11].weeksAgo === 0, 'newest week last');
+});
+
 /* ---------------- intelligent notifications ---------------- */
 
 test('intelligent notifications: a goal nudge is generated, deduped, and suppressed when opted out', async () => {

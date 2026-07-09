@@ -115,6 +115,43 @@ export function drawHrSeries(canvas, series, { maxHr = 190, zoneBounds = [], zon
   }
 }
 
+// Scatter plot for the analytics lab: relationships like pace-vs-stroke-rate or
+// HR-vs-split. Points may carry their own colour (e.g. by training zone).
+export function drawScatter(canvas, points, { xLabel = '', yLabel = '', xInvert = false, yInvert = false, color = '#38bdf8', height = 200 } = {}) {
+  const { ctx, w, h } = setup(canvas, height);
+  const pad = { l: 42, r: 10, t: 14, b: 22 };
+  const valid = points.filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+  if (valid.length < 2) { ctx.fillStyle = COL.text; ctx.font = '11px sans-serif'; ctx.fillText('Not enough data yet', pad.l, 30); return; }
+  const xs = valid.map(p => p.x), ys = valid.map(p => p.y);
+  const xMin = Math.min(...xs), xMax = Math.max(...xs), yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const X = (v) => pad.l + ((xInvert ? xMax - v : v - xMin) / ((xMax - xMin) || 1)) * (w - pad.l - pad.r);
+  const Y = (v) => pad.t + ((yInvert ? v - yMin : yMax - v) / ((yMax - yMin) || 1)) * (h - pad.t - pad.b);
+  ctx.strokeStyle = COL.grid; ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) { const y = pad.t + (i / 3) * (h - pad.t - pad.b); ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke(); }
+  for (const p of valid) { ctx.fillStyle = (p.color || color) + 'cc'; ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), 3.4, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = COL.text; ctx.font = '10px sans-serif';
+  if (yLabel) ctx.fillText(yLabel, pad.l, 10);
+  if (xLabel) ctx.fillText(xLabel, w - pad.r - ctx.measureText(xLabel).width, h - 4);
+}
+
+// Labelled vertical bars (zone distribution, weekly load, …).
+export function drawBars(canvas, items, { height = 170, showValue = true } = {}) {
+  const { ctx, w, h } = setup(canvas, height);
+  const pad = { l: 8, r: 8, t: 12, b: 22 };
+  const max = Math.max(...items.map(i => i.value), 1);
+  const bw = (w - pad.l - pad.r) / (items.length || 1);
+  ctx.textAlign = 'center';
+  items.forEach((it, i) => {
+    const bh = (it.value / max) * (h - pad.t - pad.b);
+    const x = pad.l + i * bw + 3, y = h - pad.b - bh;
+    ctx.fillStyle = it.color || COL.line; ctx.fillRect(x, y, Math.max(bw - 6, 2), bh);
+    ctx.fillStyle = COL.text; ctx.font = '10px sans-serif';
+    ctx.fillText(it.label, x + (bw - 6) / 2, h - 8);
+    if (showValue && it.value) ctx.fillText(String(it.value), x + (bw - 6) / 2, y - 3);
+  });
+  ctx.textAlign = 'left';
+}
+
 export function drawTrend(canvas, seriesList, { height = 160 } = {}) {
   // seriesList: [{ label, color, points: [{x: index, y }] , max }]
   const { ctx, w, h } = setup(canvas, height);
