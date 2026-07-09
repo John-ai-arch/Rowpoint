@@ -1510,4 +1510,28 @@ test('intelligent notifications: a goal nudge is generated, deduped, and suppres
   assert.ok(!n3.body.notifications.some(n => /weekly goal reached/i.test(n.title)), 'suppressed when opted out of workout reminders');
 });
 
+/* ---------------- research observatory (moat) ---------------- */
+
+test('observatory: returns anonymous aggregate percentiles and never individual data', async () => {
+  const r = await req('/observatory', { token: rower.token });
+  assert.equal(r.status, 200);
+  const o = r.body.observatory;
+  assert.ok(typeof o.cohortSize === 'number' && typeof o.populationSize === 'number');
+  assert.ok(o.metrics && o.metrics.weeklyMeters && o.metrics.best2k, 'metric shells present');
+  assert.equal(o.minCohort, 8);
+  assert.match(o.disclaimer, /observational/i, 'hedged, non-medical language');
+  // Privacy: no emails and no pseudonymous research ids may leak.
+  const s = JSON.stringify(o);
+  assert.ok(!s.includes('@'), 'no emails in the payload');
+  assert.ok(!/research_id|"rid"/.test(s), 'no pseudonymous ids exposed');
+});
+
+test('observatory admin export is aggregate-only and owner-gated', async () => {
+  const r = await req('/admin/observatory/export', { token: admin.token });
+  assert.equal(r.status, 200);
+  assert.ok(typeof r.body.observatory.totalAthletes === 'number' && r.body.observatory.overall);
+  assert.match(r.body.observatory.note, /No personally identifying/i);
+  assert.equal((await req('/admin/observatory/export', { token: rower.token })).status, 403, 'non-owner denied');
+});
+
 test.after(() => { server.close(); });

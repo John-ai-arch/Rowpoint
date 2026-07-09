@@ -18,6 +18,7 @@ import { llmConfigured } from './ai/coach.js';
 import { mailConfigured } from './mailer.js';
 import { createBackup, listBackups, verifyBackup } from './backup.js';
 import { developerAnalytics } from './analytics.js';
+import { observatoryExport } from './observatory.js';
 import { uuid, now, badRequest, ApiError, isEmail, safeJson, researchId, hashPassword } from './util.js';
 
 export const adminRouter = Router();
@@ -519,6 +520,12 @@ adminRouter.post('/backups/:file/verify', (req, res) => {
 adminRouter.get('/analytics', (req, res) => {
   audit(req.user.id, 'analytics.view', null, null);
   res.json({ analytics: developerAnalytics() });
+});
+
+/* ---- Research Observatory: publication-ready aggregate export (no PII) ---- */
+adminRouter.get('/observatory/export', (req, res) => {
+  audit(req.user.id, 'observatory.export', null, null);
+  res.json({ observatory: observatoryExport() });
 });
 
 adminRouter.get('/db-stats', (req, res) => {

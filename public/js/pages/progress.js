@@ -39,7 +39,8 @@ export async function renderProgress(el) {
       <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
         <div><h1>${esc(t('progress.title'))}</h1>
           <p class="muted">${esc(t('progress.subtitle'))}</p></div>
-        <span class="row" style="gap:6px;flex-wrap:wrap"><a class="btn secondary sm" href="#/timeline">📈 ${esc(t('timeline.open'))}</a>
+        <span class="row" style="gap:6px;flex-wrap:wrap"><a class="btn secondary sm" href="#/observatory">🌍 ${esc(t('obs.open'))}</a>
+        <a class="btn secondary sm" href="#/timeline">📈 ${esc(t('timeline.open'))}</a>
         <a class="btn secondary sm" href="#/lab">🔬 ${esc(t('lab.open'))}</a>
         <a class="btn secondary sm" href="#/plan">🗓 ${esc(t('plan.open'))}</a></span>
       </div>

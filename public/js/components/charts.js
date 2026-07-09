@@ -152,6 +152,32 @@ export function drawBars(canvas, items, { height = 170, showValue = true } = {})
   ctx.textAlign = 'left';
 }
 
+// Population distribution (histogram) with the viewer's own value marked — the
+// core Research Observatory visual. `hist` = { min, max, bins:[{x0,x1,count}] }.
+export function drawDistribution(canvas, hist, marker, { color = '#38bdf8', markerColor = '#f472b6', height = 170, fmt = (v) => Math.round(v) } = {}) {
+  const { ctx, w, h } = setup(canvas, height);
+  const pad = { l: 8, r: 8, t: 16, b: 20 };
+  if (!hist || !hist.bins?.length) { ctx.fillStyle = COL.text; ctx.font = '11px sans-serif'; ctx.fillText('Not enough data yet', pad.l, 30); return; }
+  const max = Math.max(...hist.bins.map(b => b.count), 1);
+  const bw = (w - pad.l - pad.r) / hist.bins.length;
+  hist.bins.forEach((b, i) => {
+    const bh = (b.count / max) * (h - pad.t - pad.b);
+    ctx.fillStyle = color + 'cc';
+    ctx.fillRect(pad.l + i * bw + 1, h - pad.b - bh, Math.max(bw - 2, 1), bh);
+  });
+  if (Number.isFinite(marker) && hist.max > hist.min) {
+    const frac = Math.max(0, Math.min(1, (marker - hist.min) / (hist.max - hist.min)));
+    const mx = pad.l + frac * (w - pad.l - pad.r);
+    ctx.strokeStyle = markerColor; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(mx, pad.t - 4); ctx.lineTo(mx, h - pad.b); ctx.stroke();
+    ctx.fillStyle = markerColor; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('you', mx, pad.t - 6); ctx.textAlign = 'left';
+  }
+  ctx.fillStyle = COL.text; ctx.font = '10px sans-serif';
+  ctx.fillText(fmt(hist.min), pad.l, h - 5);
+  const hi = fmt(hist.max); ctx.fillText(hi, w - pad.r - ctx.measureText(hi).width, h - 5);
+}
+
 export function drawTrend(canvas, seriesList, { height = 160 } = {}) {
   // seriesList: [{ label, color, points: [{x: index, y }] , max }]
   const { ctx, w, h } = setup(canvas, height);
