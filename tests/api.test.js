@@ -1372,4 +1372,25 @@ test('journal: workouts carry the AI coaching summary and an editable, searchabl
   assert.equal((await req(`/workouts/${body.id}/note`, { method: 'PATCH', token: other.token, body: { note: 'x' } })).status, 404);
 });
 
+/* ---------------- intelligent notifications ---------------- */
+
+test('intelligent notifications: a goal nudge is generated, deduped, and suppressed when opted out', async () => {
+  const u = await makeUser('smartnotif@test.com');
+  await req('/users/me', { method: 'PATCH', token: u.token, body: { goalWeeklyMeters: 3000 } });
+  await req('/workouts/sync', { method: 'POST', token: u.token, body: workoutBody(Array(10).fill(120)) }); // 5000m this week ≥ 3000 goal
+
+  const n1 = await req('/users/me/notifications', { token: u.token });
+  assert.ok(n1.body.notifications.some(n => /weekly goal reached/i.test(n.title)), 'goal-completion nudge generated');
+
+  const n2 = await req('/users/me/notifications', { token: u.token });
+  assert.equal(n2.body.notifications.filter(n => /weekly goal reached/i.test(n.title)).length, 1, 'nudge is deduped, never repeated');
+
+  // Opt-out suppresses smart nudges entirely.
+  const off = await makeUser('smartnotifoff@test.com');
+  await req('/users/me', { method: 'PATCH', token: off.token, body: { goalWeeklyMeters: 3000, notifPrefs: { workout_reminder: false, wellness_reminder: true, team_activity: true, group_activity: true, announcement: true } } });
+  await req('/workouts/sync', { method: 'POST', token: off.token, body: workoutBody(Array(10).fill(120)) });
+  const n3 = await req('/users/me/notifications', { token: off.token });
+  assert.ok(!n3.body.notifications.some(n => /weekly goal reached/i.test(n.title)), 'suppressed when opted out of workout reminders');
+});
+
 test.after(() => { server.close(); });

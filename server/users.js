@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { authRequired } from './middleware.js';
 import { publicUser } from './auth.js';
 import { badRequest, clampInt, clampNum, uuid, now, researchId } from './util.js';
+import { refreshSmartNotifications } from './smartNotifications.js';
 
 export const usersRouter = Router();
 usersRouter.use(authRequired);
@@ -68,6 +69,9 @@ usersRouter.patch('/me', (req, res) => {
 /* ---------------- notifications ---------------- */
 
 usersRouter.get('/me/notifications', (req, res) => {
+  // Generate any due intelligent nudges (goal proximity, inactivity, streak
+  // keep-alive, plan phase) before returning — deduped so they never spam.
+  try { refreshSmartNotifications(req.user); } catch { /* nudges must never break the feed */ }
   const rows = db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100').all(req.user.id);
   res.json({ notifications: rows });
 });
