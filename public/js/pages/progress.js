@@ -183,7 +183,7 @@ function ringHtml(pct, valueText, unitText) {
       <circle class="bar" cx="66" cy="66" r="${r}" stroke-width="12" stroke="url(#ringgrad)"
         stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"></circle>
       <defs><linearGradient id="ringgrad" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#38bdf8"/><stop offset="100%" stop-color="#6d7bf6"/>
+        <stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#0d9488"/>
       </linearGradient></defs>
     </svg>
     <div class="ring-label"><div class="v">${pct}%</div><div class="u">${esc(unitText)}</div></div>

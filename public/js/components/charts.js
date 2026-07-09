@@ -12,7 +12,26 @@ function setup(canvas, heightCss = 160) {
   return { ctx, w, h: heightCss };
 }
 
-const COL = { line: '#38bdf8', fill: 'rgba(56,189,248,.18)', grid: '#27395e', text: '#9db0cf', ghost: 'rgba(157,176,207,.4)', good: '#34d399' };
+// Theme-aware palette: charts read the shared CSS design tokens so canvases
+// match light/dark automatically and stay consistent with the rest of the UI.
+function readCol() {
+  const s = getComputedStyle(document.documentElement);
+  const v = (name, fallback) => (s.getPropertyValue(name).trim() || fallback);
+  const line = v('--chart-line', '#0891b2');
+  return {
+    line,
+    fill: v('--chart-fill', hexToRgba(line, 0.16)),
+    grid: v('--chart-grid', '#e3e9f1'),
+    text: v('--chart-text', '#64748b'),
+    ghost: v('--chart-ghost', 'rgba(100,116,139,.4)'),
+    good: v('--chart-good', '#059669'),
+  };
+}
+function hexToRgba(hex, a) {
+  const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex.trim());
+  return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})` : hex;
+}
+const COL = readCol();
 
 export function drawForceCurve(canvas, samples, { ghost = null, label = '' } = {}) {
   const { ctx, w, h } = setup(canvas, 170);

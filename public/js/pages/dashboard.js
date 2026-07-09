@@ -131,7 +131,7 @@ function heroHtml(prog, u) {
               <circle class="track" cx="48" cy="48" r="${r}" stroke-width="9"></circle>
               <circle class="bar" cx="48" cy="48" r="${r}" stroke-width="9" stroke="url(#dashring)"
                 stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"></circle>
-              <defs><linearGradient id="dashring" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#38bdf8"/><stop offset="100%" stop-color="#6d7bf6"/></linearGradient></defs>
+              <defs><linearGradient id="dashring" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#0d9488"/></linearGradient></defs>
             </svg>
             <div class="ring-label"><div class="v" style="font-size:1.1rem">${pct}%</div><div class="u" style="font-size:.55rem;letter-spacing:.4px;max-width:72px;margin:0 auto;line-height:1.15">${esc(t('progress.weeklyGoal'))}</div></div>
           </div>
