@@ -617,6 +617,28 @@ CREATE TABLE IF NOT EXISTS training_plans (
 CREATE INDEX IF NOT EXISTS idx_training_plans_user ON training_plans(user_id, status);
 `);
 
+/* -------------------- season planner (vision #2) --------------------
+   A rowing season = a set of target races with dates + priorities. The
+   training-plan generator already targets one race; this lets the athlete lay
+   out the whole season and build/reorient the plan toward any race. */
+db.exec(`
+CREATE TABLE IF NOT EXISTS races (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  race_date TEXT NOT NULL,
+  distance TEXT,                        -- 2000m|5000m|6000m|head|marathon|other
+  priority TEXT NOT NULL DEFAULT 'B' CHECK (priority IN ('A','B','C')),
+  goal_time_s REAL,
+  location TEXT,
+  notes TEXT,
+  result_time_s REAL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_races_user ON races(user_id, race_date);
+`);
+
 /* -------------------- equipment management (vision #8) --------------------
    The athlete's gear: ergs, HR monitors, boats, oars, shoes, etc., with
    maintenance + battery-reminder notes. Per-erg usage totals are derived from
@@ -671,7 +693,7 @@ metaSet('last_boot_at', Math.floor(Date.now() / 1000));
    gate for any *destructive* future migration (which must branch on the stored
    version rather than run unconditionally). Bump it whenever the schema
    changes. */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const priorSchema = Number(metaGet('schema_version') || 0);
 if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
 export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };

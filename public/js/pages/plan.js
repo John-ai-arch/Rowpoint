@@ -12,13 +12,13 @@ const PHASE_COLOR = {
 
 export async function renderPlan(el) {
   el.innerHTML = `<div class="card"><div class="skeleton" style="height:120px"></div></div>`;
-  let plan, review;
+  let plan, review, season;
   try {
-    const [p, r] = await Promise.all([api('/training/plan'), api('/training/weekly-review')]);
-    plan = p.plan; review = r.review;
+    const [p, r, s] = await Promise.all([api('/training/plan'), api('/training/weekly-review'), api('/training/season').catch(() => null)]);
+    plan = p.plan; review = r.review; season = s;
   } catch (e) { el.innerHTML = `<div class="notice warn">${esc(e.message)}</div>`; return; }
 
-  if (!plan) { renderCreate(el); return; }
+  if (!plan) { renderCreate(el, null, season); return; }
 
   const weeks = plan.weeks || [];
   const cur = plan.currentWeekIndex || 0;
@@ -31,6 +31,8 @@ export async function renderPlan(el) {
     </header>
 
     ${plan.coachNote ? `<div class="notice mb">🧑‍🏫 <strong>${esc(t('plan.coachNote'))}:</strong> ${esc(plan.coachNote)}</div>` : ''}
+
+    ${season ? seasonHtml(season) : ''}
 
     <div class="card">
       <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
@@ -90,13 +92,77 @@ export async function renderPlan(el) {
     } catch (e) { toast(e.message, 'error'); }
     ev.target.disabled = false; ev.target.textContent = t('plan.adaptCta');
   };
-  el.querySelector('#regenBtn').onclick = () => renderCreate(el, plan);
+  el.querySelector('#regenBtn').onclick = () => renderCreate(el, plan, season);
   el.querySelector('#archiveBtn').onclick = async () => {
     if (!confirm(t('plan.archiveConfirm'))) return;
     await api('/training/plan', { method: 'DELETE' });
     toast(t('plan.archived'), 'success');
     renderPlan(el);
   };
+  wireSeason(el, season);
+}
+
+/* ---------------- season planner ---------------- */
+
+const PRIORITY_COLOR = { A: '#ef4444', B: '#f59e0b', C: '#64748b' };
+
+function seasonHtml(season) {
+  const races = season.upcoming || [];
+  return `<div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0">${esc(t('season.title'))}</h3>
+      <button class="ghost sm" id="addRaceBtn">${esc(t('season.addRace'))}</button>
+    </div>
+    <div id="raceForm"></div>
+    ${races.length ? races.map(r => `<div class="list-item" style="align-items:flex-start">
+      <div style="flex:0 0 auto;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:${PRIORITY_COLOR[r.priority]}22;color:${PRIORITY_COLOR[r.priority]};font-weight:700">${esc(r.priority)}</div>
+      <div style="flex:1">
+        <strong>${esc(r.name)}</strong>${r.distance ? ` <span class="badge">${esc(r.distance)}</span>` : ''}
+        <div class="muted small">${esc(r.raceDate)}${r.daysAway != null ? ` · ${esc(t('season.daysAway', { n: r.daysAway }))}` : ''}${r.location ? ` · ${esc(r.location)}` : ''}</div>
+      </div>
+      <div class="row" style="gap:4px">
+        <button class="ghost sm" data-plan-race="${esc(r.name)}|${esc(r.raceDate)}">${esc(t('season.buildPlan'))}</button>
+        <button class="ghost sm" data-del-race="${esc(r.id)}">✕</button>
+      </div>
+    </div>`).join('') : `<p class="muted small">${esc(t('season.empty'))}</p>`}
+  </div>`;
+}
+
+function wireSeason(el, season) {
+  if (!season) return;
+  const addBtn = el.querySelector('#addRaceBtn');
+  if (addBtn) addBtn.onclick = () => {
+    const host = el.querySelector('#raceForm');
+    host.innerHTML = `<div style="padding:12px;background:var(--bg2);border-radius:12px;margin:8px 0">
+      <div class="grid cols2">
+        <label class="field"><span>${esc(t('season.raceName'))}</span><input id="rName" placeholder="${esc(t('season.raceNamePh'))}"></label>
+        <label class="field"><span>${esc(t('season.raceDate'))}</span><input id="rDate" type="date"></label>
+        <label class="field"><span>${esc(t('season.priority'))}</span><select id="rPri"><option value="A">A — ${esc(t('season.priorityA'))}</option><option value="B" selected>B</option><option value="C">C</option></select></label>
+        <label class="field"><span>${esc(t('season.distance'))}</span><select id="rDist"><option value="">—</option>${['2000m', '5000m', '6000m', 'head', 'marathon', 'other'].map(d => `<option>${d}</option>`).join('')}</select></label>
+      </div>
+      <div class="row" style="gap:8px"><button id="rSave" class="sm">${esc(t('season.save'))}</button><button class="secondary sm" id="rCancel">${esc(t('common.cancel') || 'Cancel')}</button></div>
+    </div>`;
+    host.querySelector('#rCancel').onclick = () => { host.innerHTML = ''; };
+    host.querySelector('#rSave').onclick = async () => {
+      const name = host.querySelector('#rName').value.trim();
+      const raceDate = host.querySelector('#rDate').value;
+      if (!name || !raceDate) { toast(t('season.needNameDate'), 'error'); return; }
+      try {
+        await api('/training/races', { method: 'POST', body: { name, raceDate, priority: host.querySelector('#rPri').value, distance: host.querySelector('#rDist').value || undefined } });
+        toast(t('season.added'), 'success');
+        renderPlan(el);
+      } catch (e) { toast(e.message, 'error'); }
+    };
+  };
+  el.querySelectorAll('[data-del-race]').forEach(b => b.onclick = async () => {
+    await api(`/training/races/${b.dataset.delRace}`, { method: 'DELETE' });
+    toast(t('season.removed'), 'success');
+    renderPlan(el);
+  });
+  el.querySelectorAll('[data-plan-race]').forEach(b => b.onclick = () => {
+    const [name, date] = b.dataset.planRace.split('|');
+    renderCreate(el, null, season, { goalEvent: name, goalDate: date });
+  });
 }
 
 function currentWeekHtml(week, idx) {
@@ -144,16 +210,19 @@ function listBlock(title, items, icon) {
 
 /* ---------------- create / regenerate ---------------- */
 
-function renderCreate(el, existing) {
+function renderCreate(el, existing, season, prefill) {
   const u = state.user || {};
   const in12wk = new Date(Date.now() + 84 * 86400 * 1000).toISOString().slice(0, 10);
+  const evVal = prefill?.goalEvent || u.goalTargetEvent || '';
+  const dateVal = prefill?.goalDate || u.goalTargetDate || in12wk;
   el.innerHTML = `
     <header class="mb"><h1>${esc(t('plan.buildTitle'))}</h1>
       <p class="muted">${esc(t('plan.buildSub'))}</p></header>
+    ${season ? seasonHtml(season) : ''}
     <div class="card">
-      <label class="field"><span>${esc(t('plan.goalEvent'))}</span><input id="pEvent" value="${esc(u.goalTargetEvent || '')}" placeholder="${esc(t('plan.goalEventPh'))}"></label>
+      <label class="field"><span>${esc(t('plan.goalEvent'))}</span><input id="pEvent" value="${esc(evVal)}" placeholder="${esc(t('plan.goalEventPh'))}"></label>
       <div class="grid cols2">
-        <label class="field"><span>${esc(t('plan.goalDate'))}</span><input id="pDate" type="date" value="${esc(u.goalTargetDate || in12wk)}"></label>
+        <label class="field"><span>${esc(t('plan.goalDate'))}</span><input id="pDate" type="date" value="${esc(dateVal)}"></label>
         <label class="field"><span>${esc(t('plan.goal2k'))}</span><input id="pGoal2k" placeholder="6:40" value="${u.goal2kSeconds ? fmtSplit(u.goal2kSeconds).replace('.0','') : ''}"></label>
       </div>
       <div class="grid cols2">
@@ -183,6 +252,7 @@ function renderCreate(el, existing) {
       renderPlan(el);
     } catch (e) { toast(e.message, 'error'); ev.target.disabled = false; ev.target.textContent = t('plan.generate'); }
   };
+  wireSeason(el, season);
 }
 
 /* ---------------- helpers ---------------- */

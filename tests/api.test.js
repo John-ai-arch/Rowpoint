@@ -1376,6 +1376,34 @@ test('journal: workouts carry the AI coaching summary and an editable, searchabl
   assert.equal((await req(`/workouts/${body.id}/note`, { method: 'PATCH', token: other.token, body: { note: 'x' } })).status, 404);
 });
 
+/* ---------------- season planner ---------------- */
+
+test('season planner: races CRUD, sorting, and next-A-race selection', async () => {
+  resetRateLimits(); // keep the growing late-suite signups under the limiter
+  const u = await makeUser('season@test.com');
+  const soon = new Date(Date.now() + 30 * 86400 * 1000).toISOString().slice(0, 10);
+  const later = new Date(Date.now() + 90 * 86400 * 1000).toISOString().slice(0, 10);
+  const b = await req('/training/races', { method: 'POST', token: u.token, body: { name: 'Head Race', raceDate: later, priority: 'B', distance: 'head' } });
+  assert.equal(b.status, 201);
+  const a = await req('/training/races', { method: 'POST', token: u.token, body: { name: 'Spring 2k', raceDate: soon, priority: 'A', distance: '2000m' } });
+  assert.equal(a.status, 201);
+  assert.ok(a.body.race.daysAway > 0);
+
+  const season = await req('/training/season', { token: u.token });
+  assert.equal(season.status, 200);
+  assert.equal(season.body.upcoming.length, 2);
+  assert.equal(season.body.races[0].name, 'Spring 2k', 'races sorted by date');
+  assert.equal(season.body.nextRace.name, 'Spring 2k', 'the priority-A race is the next target');
+
+  assert.equal((await req('/training/races', { method: 'POST', token: u.token, body: { name: 'x' } })).status, 400, 'date required');
+
+  // account scoping
+  const other = await makeUser('season-other@test.com');
+  assert.equal((await req(`/training/races/${a.body.race.id}`, { method: 'DELETE', token: other.token })).status, 404);
+  assert.equal((await req(`/training/races/${a.body.race.id}`, { method: 'DELETE', token: u.token })).status, 200);
+  assert.equal((await req('/training/season', { token: u.token })).body.upcoming.length, 1);
+});
+
 /* ---------------- performance timeline ---------------- */
 
 test('timeline: merges first row, milestones, PRs, and achievements chronologically', async () => {
@@ -1443,6 +1471,7 @@ test('analytics lab: builds scatter datasets, zone distribution, and 12-week loa
 /* ---------------- intelligent notifications ---------------- */
 
 test('intelligent notifications: a goal nudge is generated, deduped, and suppressed when opted out', async () => {
+  resetRateLimits(); // the suite has grown many makeUser signups; keep the late groups under the limiter
   const u = await makeUser('smartnotif@test.com');
   await req('/users/me', { method: 'PATCH', token: u.token, body: { goalWeeklyMeters: 3000 } });
   await req('/workouts/sync', { method: 'POST', token: u.token, body: workoutBody(Array(10).fill(120)) }); // 5000m this week ≥ 3000 goal

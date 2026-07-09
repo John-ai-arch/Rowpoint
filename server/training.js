@@ -219,6 +219,76 @@ trainingRouter.get('/phase', (req, res) => {
   });
 });
 
+/* ---------------- season planner (races) ---------------- */
+
+const RACE_DISTANCES2 = ['2000m', '5000m', '6000m', 'head', 'marathon', 'other'];
+const PRIORITIES = ['A', 'B', 'C'];
+
+function presentRace(r, nowS = now()) {
+  const dateS = r.race_date ? Math.floor(new Date(`${r.race_date}T00:00:00Z`).getTime() / 1000) : null;
+  return {
+    id: r.id, name: r.name, raceDate: r.race_date, distance: r.distance,
+    priority: r.priority, goalTimeSeconds: r.goal_time_s, location: r.location,
+    notes: r.notes, resultTimeSeconds: r.result_time_s,
+    daysAway: dateS ? Math.round((dateS - nowS) / 86400) : null,
+    isPast: dateS ? dateS < nowS : false,
+  };
+}
+
+trainingRouter.get('/season', (req, res) => {
+  const nowS = now();
+  const races = db.prepare('SELECT * FROM races WHERE user_id = ? ORDER BY race_date').all(req.user.id).map(r => presentRace(r, nowS));
+  const plan = activePlanRow(req.user.id);
+  const nextA = races.find(r => !r.isPast && r.priority === 'A') || races.find(r => !r.isPast) || null;
+  res.json({
+    races,
+    upcoming: races.filter(r => !r.isPast),
+    past: races.filter(r => r.isPast),
+    nextRace: nextA,
+    activePlanEvent: plan ? plan.goal_event : null,
+    activePlanGoalDate: plan ? plan.goal_date : null,
+  });
+});
+
+trainingRouter.post('/races', (req, res) => {
+  const b = req.body || {};
+  if (!b.name || !b.raceDate) throw badRequest('Race name and date are required.', 'missing_field');
+  if (b.distance && !RACE_DISTANCES2.includes(b.distance)) throw badRequest('Unknown race distance.');
+  if (b.priority && !PRIORITIES.includes(b.priority)) throw badRequest('Priority must be A, B, or C.');
+  const id = uuid();
+  db.prepare(`INSERT INTO races (id, user_id, name, race_date, distance, priority, goal_time_s, location, notes, created_at, updated_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, req.user.id, String(b.name).slice(0, 120), b.raceDate, b.distance || null,
+      PRIORITIES.includes(b.priority) ? b.priority : 'B', clampNum(b.goalTimeSeconds, 60, 20000),
+      b.location ? String(b.location).slice(0, 120) : null, b.notes ? String(b.notes).slice(0, 500) : null, now(), now());
+  res.status(201).json({ race: presentRace(db.prepare('SELECT * FROM races WHERE id = ?').get(id)) });
+});
+
+trainingRouter.patch('/races/:id', (req, res) => {
+  const r = db.prepare('SELECT * FROM races WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!r) throw new ApiError(404, 'Race not found.', 'not_found');
+  const b = req.body || {};
+  if (b.distance && !RACE_DISTANCES2.includes(b.distance)) throw badRequest('Unknown race distance.');
+  if (b.priority && !PRIORITIES.includes(b.priority)) throw badRequest('Priority must be A, B, or C.');
+  db.prepare(`UPDATE races SET name=?, race_date=?, distance=?, priority=?, goal_time_s=?, location=?, notes=?, result_time_s=?, updated_at=? WHERE id=?`)
+    .run(b.name !== undefined ? String(b.name).slice(0, 120) : r.name,
+      b.raceDate ?? r.race_date, b.distance !== undefined ? b.distance : r.distance,
+      b.priority !== undefined && PRIORITIES.includes(b.priority) ? b.priority : r.priority,
+      b.goalTimeSeconds !== undefined ? clampNum(b.goalTimeSeconds, 60, 20000) : r.goal_time_s,
+      b.location !== undefined ? (b.location ? String(b.location).slice(0, 120) : null) : r.location,
+      b.notes !== undefined ? (b.notes ? String(b.notes).slice(0, 500) : null) : r.notes,
+      b.resultTimeSeconds !== undefined ? clampNum(b.resultTimeSeconds, 60, 20000) : r.result_time_s,
+      now(), r.id);
+  res.json({ race: presentRace(db.prepare('SELECT * FROM races WHERE id = ?').get(r.id)) });
+});
+
+trainingRouter.delete('/races/:id', (req, res) => {
+  const r = db.prepare('SELECT id FROM races WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!r) throw new ApiError(404, 'Race not found.', 'not_found');
+  db.prepare('DELETE FROM races WHERE id = ?').run(r.id);
+  res.json({ ok: true });
+});
+
 /* ---------------- coach visibility & note (coaches see rowers' plans) ---------------- */
 
 trainingRouter.get('/team/:teamId/plans', (req, res) => {
