@@ -13,6 +13,36 @@ const { validatePlan } = await import('../server/ai/planValidation.js');
 const { buildFrame, parseFrame, encodeWorkout } = await import('../public/js/ble/csafe.js');
 const { parseHrMeasurement } = await import('../public/js/ble/sensors.js');
 const { sanitizeHrSeries, hrSummary, zoneIndex, effectiveMaxHr } = await import('../server/hr.js');
+const { computeResearchVariables } = await import('../server/research/variables.js');
+const { qualityFlags } = await import('../server/research/quality.js');
+
+/* ---------------- research variables + quality (research platform) ---------------- */
+
+test('computeResearchVariables produces labelled derived variables with units', () => {
+  const now = 1_700_000_000;
+  const rows = [];
+  for (let i = 0; i < 12; i++) rows.push({ started_at: now - i * 3 * 86400, total_distance_m: 6000, total_time_s: 1500, avg_split_s: 125, avg_stroke_rate: 24, avg_heart_rate: 150, hr_zones_json: JSON.stringify({ zoneSeconds: [600, 500, 300, 80, 20] }) });
+  rows.push({ started_at: now - 40 * 86400, total_distance_m: 2000, total_time_s: 420, avg_split_s: 105, avg_stroke_rate: 32 });
+  rows.push({ started_at: now - 5 * 86400, total_distance_m: 2000, total_time_s: 410, avg_split_s: 102.5, avg_stroke_rate: 33 });
+  const v = computeResearchVariables(rows, now);
+  assert.equal(v.hasData, true);
+  assert.equal(v.weeklyMeters.type, 'derived');
+  assert.equal(v.weeklyMeters.unit, 'm/week');
+  assert.ok(v.acuteChronicWorkloadRatio.value > 0);
+  assert.ok(v.intensityDistribution.value.easyPct > v.intensityDistribution.value.hardPct, 'mostly easy');
+  assert.equal(v.best2kSeconds.value, 410, 'fastest 2k captured');
+  assert.equal(v.fatigueEstimate.type, 'estimate', 'fatigue is explicitly an estimate, not a measurement');
+  // empty input degrades gracefully
+  assert.equal(computeResearchVariables([], now).hasData, false);
+});
+
+test('qualityFlags catches implausible and incomplete records without deleting them', () => {
+  assert.deepEqual(qualityFlags({ total_distance_m: 2000, total_time_s: 420, avg_split_s: 105, avg_stroke_rate: 30, avg_heart_rate: 170 }, [{}]), [], 'clean record has no flags');
+  assert.ok(qualityFlags({ total_distance_m: 0, total_time_s: 0 }, []).includes('zero_distance'));
+  assert.ok(qualityFlags({ total_distance_m: 500, total_time_s: 30, avg_split_s: 40 }, [{}]).includes('impossible_pace'));
+  assert.ok(qualityFlags({ total_distance_m: 500, total_time_s: 120, avg_heart_rate: 300 }, [{}]).includes('unrealistic_heart_rate'));
+  assert.ok(qualityFlags({ total_distance_m: 5000, total_time_s: 1200, avg_split_s: 120 }, [{}]).includes('incomplete_sensors'), 'no HR + no power flagged');
+});
 
 /* ---------------- training analysis + coach fallback ---------------- */
 

@@ -16,6 +16,33 @@ import { db } from './db.js';
 import { config } from './config.js';
 import { uuid, now, researchId, safeJson } from './util.js';
 import { qualityFlags } from './research/quality.js';
+import { computeResearchVariables } from './research/variables.js';
+import { isoWeekKey } from './groups.js';
+
+/**
+ * Append a weekly longitudinal snapshot of the standardized research variables
+ * for this pseudonymous athlete, at most once per study per ISO week (older
+ * weeks are preserved — never overwritten). Best-effort; never throws into the
+ * contribution path.
+ */
+function writeSnapshotIfDue(rid, nowS) {
+  try {
+    const weekKey = isoWeekKey(nowS);
+    for (const tag of activeStudyTags()) {
+      const exists = db.prepare('SELECT 1 FROM research_snapshots WHERE research_id = ? AND study_tag = ? AND week_key = ?').get(rid, tag, weekKey);
+      if (exists) continue;
+      const rows = db.prepare(
+        `SELECT started_at, total_distance_m, total_time_s, avg_split_s, avg_stroke_rate,
+                avg_heart_rate, hr_zones_json FROM research_workouts
+         WHERE research_id = ? AND study_tag = ?`).all(rid, tag);
+      const vars = computeResearchVariables(rows, nowS);
+      db.prepare(`INSERT INTO research_snapshots
+          (id, research_id, study_tag, week_key, snapshot_at, variables_json, sw_version, schema_version, created_at)
+          VALUES (?,?,?,?,?,?,?,?,?)`)
+        .run(uuid(), rid, tag, weekKey, nowS, JSON.stringify(vars), config.softwareVersion, config.researchSchemaVersion, nowS);
+    }
+  } catch { /* snapshots must never break contribution */ }
+}
 
 function activeStudyTags() {
   return db.prepare('SELECT tag FROM studies WHERE active = 1').all().map(r => r.tag);
@@ -117,6 +144,7 @@ export function contributeWorkout(user, workout, splits, provenance = {}) {
       shareDemographics ? (user.country || null) : null,
       nowS);
   }
+  writeSnapshotIfDue(rid, nowS);
   return { contributed: tags.length > 0, studies: tags, confidence, missing, qualityFlags: flags };
 }
 

@@ -739,6 +739,27 @@ CREATE TABLE IF NOT EXISTS stroke_annotations (
 CREATE INDEX IF NOT EXISTS idx_stroke_annotations ON stroke_annotations(analysis_id, t_seconds);
 `);
 
+/* -------------------- longitudinal research snapshots (Feature B) --------------------
+   Append-only weekly rollups of the standardized research variables per
+   pseudonymous athlete, so the dataset carries HISTORICAL derived values (not
+   just current ones) for longitudinal analysis. One row per research_id per
+   study per ISO week; historical weeks are never overwritten. */
+db.exec(`
+CREATE TABLE IF NOT EXISTS research_snapshots (
+  id TEXT PRIMARY KEY,
+  research_id TEXT NOT NULL,
+  study_tag TEXT NOT NULL,
+  week_key TEXT NOT NULL,
+  snapshot_at INTEGER NOT NULL,
+  variables_json TEXT NOT NULL,
+  sw_version TEXT,
+  schema_version INTEGER,
+  created_at INTEGER NOT NULL,
+  UNIQUE(research_id, study_tag, week_key)
+);
+CREATE INDEX IF NOT EXISTS idx_research_snapshots ON research_snapshots(study_tag, week_key);
+`);
+
 /* -------------------- database identity & boot tracking --------------------
    One row of instance metadata lets the app (and the admin System tab) prove
    whether storage is actually persistent: the instance id and created_at
