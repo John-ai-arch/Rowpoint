@@ -51,6 +51,7 @@ import { trainingRouter } from './training.js';
 import { performanceRouter } from './performance.js';
 import { equipmentRouter } from './equipment.js';
 import { observatoryRouter } from './observatoryRouter.js';
+import { strokeRouter } from './stroke.js';
 import { aiRouter } from './aiRouter.js';
 import { adminRouter } from './admin.js';
 import { csrfProtection } from './cookies.js';
@@ -85,6 +86,7 @@ export function createApp() {
     "frame-src https://accounts.google.com https://appleid.apple.com",
     "worker-src 'self'",
     "manifest-src 'self'",
+    "media-src 'self' blob:",   // client-side video playback for stroke analysis (object URLs)
   ].join('; ');
   app.use((req, res, next) => {
     res.setHeader('Content-Security-Policy', csp);
@@ -122,6 +124,7 @@ export function createApp() {
   app.use('/api/performance', performanceRouter);
   app.use('/api/equipment', equipmentRouter);
   app.use('/api/observatory', observatoryRouter);
+  app.use('/api/stroke', strokeRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/admin', adminRouter);
 

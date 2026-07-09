@@ -1510,6 +1510,54 @@ test('intelligent notifications: a goal nudge is generated, deduped, and suppres
   assert.ok(!n3.body.notifications.some(n => /weekly goal reached/i.test(n.title)), 'suppressed when opted out of workout reminders');
 });
 
+/* ---------------- AI stroke analysis (moat) ---------------- */
+
+test('stroke analysis: modular pipeline computes rate/ratio/consistency; annotations respect roles; compare works', async () => {
+  resetRateLimits();
+  const cch = await makeUser('stroke-coach@test.com', 'coach');
+  const ath = await makeUser('stroke-ath@test.com', 'rower');
+  const outsider = await makeUser('stroke-out@test.com', 'rower');
+  const teams = await req('/teams', { token: cch.token });
+  const code = teams.body.coached[0].code;
+  await req('/teams/join', { method: 'POST', token: ath.token, body: { code } });
+
+  // module catalogue advertises active + roadmap modules
+  const mods = await req('/stroke/modules', { token: ath.token });
+  assert.ok(mods.body.modules.some(m => m.id === 'stroke-rate' && m.available));
+  assert.ok(mods.body.modules.some(m => m.id === 'pose-estimation' && !m.available), 'roadmap module advertised, not run');
+
+  // ~30 spm (catch every 2s), drive 0.8s / recovery 1.2s
+  const marks = { catches: [0, 2, 4, 6, 8], finishes: [0.8, 2.8, 4.8, 6.8] };
+  const created = await req('/stroke', { method: 'POST', token: ath.token, body: { title: '2k technique', kind: 'erg', durationS: 9, marks } });
+  assert.equal(created.status, 201);
+  const a = created.body.analysis;
+  assert.equal(a.metrics.strokes, 5);
+  assert.ok(Math.abs(a.metrics.strokeRateSpm - 30) < 1.5, `~30 spm, got ${a.metrics.strokeRateSpm}`);
+  assert.ok(a.metrics.ratio > 1, 'drive:recovery ratio computed');
+  assert.ok(a.observations.length && a.observations[0].confidence != null, 'observations carry explicit confidence');
+
+  const detail = await req(`/stroke/${a.id}`, { token: ath.token });
+  assert.equal(detail.body.analysis.marks.catches.length, 5);
+
+  // annotations: owner=athlete role, coach of the athlete=coach role, others 403
+  assert.equal((await req(`/stroke/${a.id}/annotations`, { method: 'POST', token: ath.token, body: { body: 'felt rushed', tSeconds: 4 } })).body.role, 'athlete');
+  assert.equal((await req(`/stroke/${a.id}/annotations`, { method: 'POST', token: cch.token, body: { body: 'open the catch earlier' } })).body.role, 'coach');
+  assert.equal((await req(`/stroke/${a.id}/annotations`, { method: 'POST', token: outsider.token, body: { body: 'x' } })).status, 403);
+
+  // patch re-runs the pipeline over new marks (~60 spm)
+  const patched = await req(`/stroke/${a.id}`, { method: 'PATCH', token: ath.token, body: { marks: { catches: [0, 1, 2, 3, 4, 5], finishes: [0.5, 1.5, 2.5, 3.5, 4.5] } } });
+  assert.ok(Math.abs(patched.body.analysis.metrics.strokeRateSpm - 60) < 2, 're-analysis reflects new marks');
+
+  // historical comparison
+  const b = await req('/stroke', { method: 'POST', token: ath.token, body: { title: 'later session', kind: 'erg', durationS: 9, marks } });
+  const cmp = await req(`/stroke/compare?a=${a.id}&b=${b.body.analysis.id}`, { token: ath.token });
+  assert.ok(cmp.body.a?.metrics && cmp.body.b?.metrics, 'both analyses returned for comparison');
+  // scoping: the outsider cannot read the athlete's analysis
+  assert.equal((await req(`/stroke/${a.id}`, { token: outsider.token })).status, 404);
+
+  assert.equal((await req(`/stroke/${a.id}`, { method: 'DELETE', token: ath.token })).status, 200);
+});
+
 /* ---------------- research observatory (moat) ---------------- */
 
 test('observatory: returns anonymous aggregate percentiles and never individual data', async () => {
