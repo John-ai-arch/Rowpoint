@@ -1574,6 +1574,26 @@ test('observatory: returns anonymous aggregate percentiles and never individual 
   assert.ok(!/research_id|"rid"/.test(s), 'no pseudonymous ids exposed');
 });
 
+test('benchmark explorer: population benchmarks + insights for a filtered cohort (reuses observatory)', async () => {
+  const r = await req('/observatory/benchmark', { token: rower.token });
+  assert.equal(r.status, 200);
+  const b = r.body.benchmark;
+  assert.ok(typeof b.cohortSize === 'number' && b.metrics && b.metrics.weeklyMeters);
+  assert.ok('quantiles' in b.metrics.weeklyMeters, 'benchmark exposes population quantiles');
+  assert.ok(Array.isArray(b.insights));
+  assert.match(b.disclaimer, /[Oo]bservational/);
+  // filters are accepted (a narrow cohort may drop below the min, which is fine)
+  const filtered = await req('/observatory/benchmark?weightClass=heavyweight', { token: rower.token });
+  assert.equal(filtered.status, 200);
+});
+
+test('cross-system: Progress and the AI coach reference the anonymous population', async () => {
+  const prog = await req('/me/progress', { token: rower.token });
+  assert.ok('population' in prog.body.progress, 'Progress carries a population percentile snapshot');
+  const sug = await req('/ai/suggestion', { token: rower.token });
+  assert.ok('populationInsight' in sug.body, 'AI suggestion carries a population insight field (may be null)');
+});
+
 test('observatory admin export is aggregate-only and owner-gated', async () => {
   const r = await req('/admin/observatory/export', { token: admin.token });
   assert.equal(r.status, 200);

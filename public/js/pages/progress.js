@@ -49,6 +49,8 @@ export async function renderProgress(el) {
 
     ${insightHtml(data, remaining, goalPct)}
 
+    ${communityChip(data.population)}
+
     ${perf ? perfHtml(perf) : ''}
 
     ${livingGoalsHtml(data.goalsLiving)}
@@ -221,6 +223,17 @@ function perfHtml(perf) {
     : `<div class="empty"><span class="ic" aria-hidden="true">📈</span><p class="muted small">${esc(pr.reason)}</p></div>`}
     </div>
   </div>`;
+}
+
+/* Cross-system: celebrate where the athlete stands in the anonymous population. */
+function communityChip(pop) {
+  if (!pop || !pop.available || pop.weeklyMetersPct == null) return '';
+  const pct = pop.weeklyMetersPct;
+  const msg = pct >= 50
+    ? t('progress.communityTop', { pct: Math.max(1, 100 - pct) })
+    : t('progress.communityAhead', { pct });
+  return `<a href="#/observatory" class="notice" style="display:flex;align-items:center;gap:8px;text-decoration:none;margin-bottom:14px">
+    🌍 <span>${esc(msg)} <span class="muted small">${esc(t('progress.communityCta'))}</span></span></a>`;
 }
 
 /* Living goals: each shows progress, a projected outcome, and an ETA. */

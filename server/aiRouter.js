@@ -12,6 +12,7 @@ import { buildTrainingAnalysis } from './ai/trainingAnalysis.js';
 import { generateRecommendation } from './ai/coach.js';
 import { logger } from './log.js';
 import { uuid, now, todayStr, safeJson, ApiError } from './util.js';
+import { percentileSnapshot } from './observatory.js';
 
 const log = logger('ai-router');
 
@@ -25,6 +26,16 @@ const limitAiRefresh = (req, res, next) => (req.query.refresh === '1'
   ? rateLimit('ai_refresh', 20, 60 * 60 * 1000)(req, res, next)
   : next());
 
+// Cross-system (moat): a hedged population insight from the Research
+// Observatory, so the daily coaching sits in the context of comparable athletes.
+function popInsight(user) {
+  try {
+    const s = percentileSnapshot(user);
+    if (!s.available || s.weeklyMetersPct == null) return null;
+    return `For context, your weekly volume is higher than ${s.weeklyMetersPct}% of comparable athletes in the anonymous research population — an observation, not a prescription.`;
+  } catch { return null; }
+}
+
 /* ---------------- today's recommendation ---------------- */
 
 aiRouter.get('/suggestion', limitAiRefresh, async (req, res) => {
@@ -32,7 +43,7 @@ aiRouter.get('/suggestion', limitAiRefresh, async (req, res) => {
   const refresh = req.query.refresh === '1';
   let row = db.prepare('SELECT * FROM ai_suggestions WHERE user_id = ? AND date = ?').get(req.user.id, date);
   if (row && !refresh) {
-    return res.json({ suggestion: presentSuggestion(row) });
+    return res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user) });
   }
 
   const analysis = buildTrainingAnalysis(req.user);
@@ -47,7 +58,7 @@ aiRouter.get('/suggestion', limitAiRefresh, async (req, res) => {
       'delivered', rec.source, rec.confidence, now());
   log.info(`Recommendation for user ${req.user.id}: ${rec.category} (source=${rec.source}, confidence=${rec.confidence})`);
   row = db.prepare('SELECT * FROM ai_suggestions WHERE id = ?').get(id);
-  res.json({ suggestion: presentSuggestion(row) });
+  res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user) });
 });
 
 /* ---------------- the analysis itself (training balance UI) ---------------- */

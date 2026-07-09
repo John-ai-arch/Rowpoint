@@ -181,6 +181,60 @@ function cohortPhrase(f) {
   return parts.length ? ` (${parts.join(', ')})` : '';
 }
 
+/* ------------------------------------------------------------------ */
+/* Benchmark Explorer (moat #3) — reuses this population + filters.     */
+/* ------------------------------------------------------------------ */
+
+const fmtTime = (s) => (Number.isFinite(s) && s > 0 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : '—');
+
+/** Population-level benchmarks for a filtered cohort (no viewer needed). */
+export function benchmark(filters = {}) {
+  const cohort = applyFilters(population(), filters);
+  const metrics = {};
+  for (const [key, meta] of Object.entries(METRICS)) {
+    const vals = cohort.map(a => a[key]);
+    metrics[key] = { label: meta.label, direction: meta.dir, quantiles: quantiles(vals), histogram: histogram(vals) };
+  }
+  return {
+    cohortSize: cohort.length,
+    populationSize: cache.athletes ? cache.athletes.length : 0,
+    enoughData: cohort.length >= MIN_COHORT,
+    minCohort: MIN_COHORT,
+    metrics,
+    insights: benchmarkInsights(cohort, filters),
+    confidence: cohort.length >= 40 ? 'high' : cohort.length >= MIN_COHORT ? 'moderate' : 'low',
+    disclaimer: 'Observational statistics from research-opted-in athletes — patterns to learn from, not guarantees.',
+    filtersApplied: filters,
+  };
+}
+
+function benchmarkInsights(cohort, f) {
+  if (cohort.length < MIN_COHORT) return [];
+  const out = [];
+  const wm = quantiles(cohort.map(a => a.weeklyMeters));
+  if (wm) out.push(`Athletes in this group typically row ${Math.round(wm.p25 / 1000)}–${Math.round(wm.p75 / 1000)} km per week (median ${Math.round(wm.median / 1000)} km).`);
+  const k2 = quantiles(cohort.map(a => a.best2k).filter(Number.isFinite));
+  if (k2) out.push(`Their 2k times span ${fmtTime(k2.p25)}–${fmtTime(k2.p75)} (median ${fmtTime(k2.median)}).`);
+  const fr = quantiles(cohort.map(a => a.workoutsPerWeek));
+  if (fr) out.push(`They average about ${fr.median} sessions per week.`);
+  return out;
+}
+
+/** Lightweight percentile snapshot for cross-system surfaces (Progress, coach). */
+export function percentileSnapshot(user, filters = {}, nowS = Math.floor(Date.now() / 1000)) {
+  const cohort = applyFilters(population(), filters);
+  if (cohort.length < MIN_COHORT) return { available: false, cohortSize: cohort.length };
+  const me = viewerMetrics(user, nowS);
+  const pctFor = (key) => percentile(cohort.map(a => a[key]), me[key], METRICS[key].dir);
+  return {
+    available: true,
+    cohortSize: cohort.length,
+    weeklyMetersPct: pctFor('weeklyMeters'),
+    best2kPct: pctFor('best2k'),
+    consistencyPct: pctFor('workoutsPerWeek'),
+  };
+}
+
 /** Publication-ready, PII-free aggregate tables for the admin research export. */
 export function observatoryExport() {
   const pop = population();

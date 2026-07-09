@@ -8,6 +8,7 @@ import { Router } from 'express';
 import { db } from './db.js';
 import { authRequired } from './middleware.js';
 import { streaksFor, badgesFor, BADGES, BADGE_ICONS, weekStartS, isoWeekKey, dayNum } from './groups.js';
+import { percentileSnapshot } from './observatory.js';
 
 export const progressRouter = Router();
 progressRouter.use(authRequired);
@@ -227,6 +228,9 @@ progressRouter.get('/progress', (req, res) => {
       trend,
       goals: { weeklyMeters: goalMeters, weeklySessions: goalSessions, weeklyMinutes: goalMinutes },
       goalsLiving,
+      // Cross-system (moat): the Observatory percentile, so Progress can
+      // celebrate where the athlete stands in the anonymous population.
+      population: percentileSnapshot(req.user, {}, t),
       improvement: {
         metersDelta: Math.round(week.meters - prevWeekOnly.meters),
         workoutsDelta: week.workouts - prevWeekOnly.workouts,

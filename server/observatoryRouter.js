@@ -2,14 +2,13 @@
 // percentile within an anonymous cohort. Never returns individual rows.
 import { Router } from 'express';
 import { authRequired } from './middleware.js';
-import { observe } from './observatory.js';
+import { observe, benchmark } from './observatory.js';
 
 export const observatoryRouter = Router();
 observatoryRouter.use(authRequired);
 
-observatoryRouter.get('/', (req, res) => {
-  const q = req.query || {};
-  const filters = {
+function readFilters(q = {}) {
+  return {
     weightClass: q.weightClass || null,
     birthDecade: q.birthDecade || null,
     goalType: q.goalType || null,
@@ -17,5 +16,13 @@ observatoryRouter.get('/', (req, res) => {
     best2kMax: q.best2kMax || null,
     weeklyMetersMin: q.weeklyMetersMin || null,
   };
-  res.json({ observatory: observe(req.user, filters) });
+}
+
+// Benchmark Explorer (moat #3) — population benchmarks for an explored cohort.
+observatoryRouter.get('/benchmark', (req, res) => {
+  res.json({ benchmark: benchmark(readFilters(req.query)) });
+});
+
+observatoryRouter.get('/', (req, res) => {
+  res.json({ observatory: observe(req.user, readFilters(req.query)) });
 });

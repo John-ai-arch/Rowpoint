@@ -36,8 +36,10 @@ function draw(el, obs) {
   const confColor = { high: 'good', moderate: 'amber', low: '' }[obs.confidence] || '';
   el.innerHTML = `
     <header class="mb">
-      <h1>${esc(t('obs.title'))}</h1>
-      <p class="muted">${esc(t('obs.subtitle'))}</p>
+      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+        <div><h1>${esc(t('obs.title'))}</h1><p class="muted">${esc(t('obs.subtitle'))}</p></div>
+        <a class="btn secondary sm" href="#/benchmark">🔎 ${esc(t('bench.open'))}</a>
+      </div>
     </header>
 
     ${optedIn ? '' : `<div class="notice mb">🔬 ${esc(t('obs.optInPrompt'))} <a href="#/settings">${esc(t('obs.optInCta'))}</a></div>`}
