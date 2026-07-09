@@ -1283,3 +1283,101 @@ groupsRouter.get('/:id/analytics', (req, res) => {
     },
   });
 });
+
+/* -------------------- club dashboard (vision #9) --------------------
+   A club-level view for a group: total meters, most-active athletes, this-week
+   participation rate, and club records (test pieces among sharing members). */
+groupsRouter.get('/:id/club', (req, res) => {
+  requireMember(req, req.params.id);
+  const gid = req.params.id, t = now();
+  const memberCount = db.prepare('SELECT COUNT(*) c FROM group_members WHERE group_id = ?').get(gid).c;
+
+  const totalMeters = Math.round(db.prepare(
+    `SELECT COALESCE(SUM(w.total_distance_m),0) m FROM workouts w
+     JOIN group_members gm ON gm.user_id = w.user_id
+     JOIN users u ON u.id = w.user_id AND ${VOLUME_PRIVACY} WHERE gm.group_id = ?`).get(gid).m);
+
+  const mostActive = db.prepare(
+    `SELECT u.display_name AS name, ROUND(SUM(w.total_distance_m)) AS meters, COUNT(*) AS workouts
+     FROM workouts w JOIN group_members gm ON gm.user_id = w.user_id
+     JOIN users u ON u.id = w.user_id AND ${VOLUME_PRIVACY}
+     WHERE gm.group_id = ? AND w.started_at >= ? GROUP BY w.user_id ORDER BY meters DESC LIMIT 10`).all(gid, t - 30 * DAY);
+
+  const activeThisWeek = db.prepare(
+    `SELECT COUNT(DISTINCT w.user_id) c FROM workouts w JOIN group_members gm ON gm.user_id = w.user_id
+     WHERE gm.group_id = ? AND w.started_at >= ?`).get(gid, weekStartS(t)).c;
+
+  // Club records: best test-piece times among members who share their history.
+  const TESTS = {
+    best2k: "json_extract(w.workout_plan_json,'$.type')='distance' AND json_extract(w.workout_plan_json,'$.distanceM')=2000 AND w.total_distance_m >= 2000",
+    best5k: "json_extract(w.workout_plan_json,'$.type')='distance' AND json_extract(w.workout_plan_json,'$.distanceM')=5000 AND w.total_distance_m >= 5000",
+    best6k: "json_extract(w.workout_plan_json,'$.type')='distance' AND json_extract(w.workout_plan_json,'$.distanceM')=6000 AND w.total_distance_m >= 6000",
+  };
+  const record = (sql) => db.prepare(
+    `SELECT u.display_name AS name, w.total_time_s AS timeS FROM workouts w
+     JOIN group_members gm ON gm.user_id = w.user_id
+     JOIN users u ON u.id = w.user_id AND u.share_2k_history = 1
+     WHERE gm.group_id = ? AND ${sql} AND w.total_time_s > 0 ORDER BY w.total_time_s ASC LIMIT 1`).get(gid);
+
+  res.json({
+    club: {
+      memberCount,
+      totalMeters,
+      activeThisWeek,
+      participationRatePct: memberCount ? Math.round((activeThisWeek / memberCount) * 100) : 0,
+      mostActive: mostActive.map(m => ({ name: m.name, meters: m.meters, workouts: m.workouts })),
+      records: {
+        best2k: record(TESTS.best2k) || null,
+        best5k: record(TESTS.best5k) || null,
+        best6k: record(TESTS.best6k) || null,
+      },
+    },
+  });
+});
+
+/* -------------------- crew compatibility (vision #4) --------------------
+   A coaching aid — NOT a ranking of worth. Compares members' training
+   characteristics (typical stroke rate, weekly volume, consistency, boat
+   class) among those who share their workouts, and suggests pairs whose
+   profiles are closest (similar rate + volume → likely to train well together). */
+groupsRouter.get('/:id/crew-compatibility', (req, res) => {
+  requireMember(req, req.params.id);
+  const gid = req.params.id, t = now();
+  const rows = db.prepare(
+    `SELECT u.id, u.display_name AS name, u.boat_class AS boatClass,
+            AVG(w.avg_stroke_rate) AS rate,
+            SUM(w.total_distance_m) AS meters90,
+            COUNT(DISTINCT date(w.started_at,'unixepoch')) AS trainingDays
+     FROM group_members gm JOIN users u ON u.id = gm.user_id AND ${VOLUME_PRIVACY}
+     LEFT JOIN workouts w ON w.user_id = u.id AND w.started_at >= ?
+     WHERE gm.group_id = ? GROUP BY u.id`).all(t - 90 * DAY, gid);
+
+  const members = rows.filter(r => r.meters90 > 0).map(r => ({
+    id: r.id, name: r.name, boatClass: r.boatClass || null,
+    avgStrokeRate: r.rate ? Math.round(r.rate) : null,
+    weeklyMeters: Math.round((r.meters90 || 0) / 13),
+    consistencyPct: Math.min(100, Math.round((r.trainingDays / 90) * 100 * 3)), // trained days as % of a ~3x/wk cadence
+  }));
+
+  // Suggest pairs by similarity of stroke rate + weekly volume (normalised).
+  const pairs = [];
+  for (let i = 0; i < members.length; i++) {
+    for (let j = i + 1; j < members.length; j++) {
+      const a = members[i], b = members[j];
+      if (a.avgStrokeRate == null || b.avgStrokeRate == null) continue;
+      const rateDiff = Math.abs(a.avgStrokeRate - b.avgStrokeRate) / 40;         // ~0..1
+      const volDiff = Math.abs(a.weeklyMeters - b.weeklyMeters) / Math.max(a.weeklyMeters, b.weeklyMeters, 1);
+      const score = Math.round((1 - (rateDiff * 0.6 + volDiff * 0.4)) * 100);
+      pairs.push({ a: a.name, b: b.name, score, sameBoatClass: !!(a.boatClass && a.boatClass === b.boatClass) });
+    }
+  }
+  pairs.sort((x, y) => y.score - x.score);
+
+  res.json({
+    crew: {
+      members,
+      suggestedPairs: pairs.slice(0, 8),
+      note: 'A coaching aid based on training style, not a measure of ability. Only members who share their workouts are included.',
+    },
+  });
+});

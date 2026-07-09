@@ -865,6 +865,26 @@ test('groups: discovery finds public groups; direct join works', async () => {
   assert.equal((await req(`/groups/${pub.body.groupId}`, { token: rower.token })).body.group.memberCount, 2);
 });
 
+test('club dashboard + crew compatibility aggregate member training (members only)', async () => {
+  const club = await req(`/groups/${groupId}/club`, { token: rower.token });
+  assert.equal(club.status, 200);
+  assert.ok(club.body.club.memberCount >= 2);
+  assert.ok(club.body.club.totalMeters > 0, 'club total aggregates members');
+  assert.ok(Array.isArray(club.body.club.mostActive) && 'participationRatePct' in club.body.club);
+  assert.ok('best2k' in club.body.club.records);
+
+  const crew = await req(`/groups/${groupId}/crew-compatibility`, { token: rower.token });
+  assert.equal(crew.status, 200);
+  assert.ok(Array.isArray(crew.body.crew.members) && Array.isArray(crew.body.crew.suggestedPairs));
+  assert.match(crew.body.crew.note, /coaching aid/i);
+  // Every suggested pair carries a 0–100 match score.
+  for (const p of crew.body.crew.suggestedPairs) assert.ok(p.score >= 0 && p.score <= 100 && p.a && p.b);
+
+  // Non-members are blocked from both.
+  assert.equal((await req(`/groups/${groupId}/club`, { token: admin.token })).status, 403);
+  assert.equal((await req(`/groups/${groupId}/crew-compatibility`, { token: admin.token })).status, 403);
+});
+
 /* ---------------- account persistence & duplicate prevention ---------------- */
 
 test('accounts persist: log out, log back in, same account, history intact, duplicate signup rejected', async () => {

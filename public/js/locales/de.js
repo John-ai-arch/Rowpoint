@@ -330,6 +330,15 @@ export const de = {
     conf_medium: 'Mittlere Sicherheit',
     conf_low: 'Geringe Sicherheit',
   },
+  integrations: {
+    title: 'Geräte & Integrationen',
+    manage: 'Integrationen',
+    subtitle: 'Verbinde Wearables und Gesundheitsplattformen.',
+    note: 'Diese Integrationen sind geplant. RowPoint ist so gebaut, dass sie als steckbare Adapter hinzugefügt werden können – noch werden keine deiner Daten erfasst.',
+    planned: 'Geplant',
+    connected: 'Verbunden',
+    bleNote: 'Bluetooth-Ergometer und Pulsgurte werden heute schon auf den Rudern- und Herzfrequenz-Seiten unterstützt.',
+  },
   season: {
     title: 'Saison',
     addRace: '+ Rennen hinzufügen',

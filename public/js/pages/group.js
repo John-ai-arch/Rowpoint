@@ -64,7 +64,7 @@ export async function renderGroup(el, groupId) {
         </div>
       </div>
       <div class="seg mb mt" id="gtabs" style="flex-wrap:wrap">
-        ${['Dashboard', 'Leaderboards', 'Feed', 'Challenges', 'Goals', 'Chat', 'Members', 'Analytics'].map(t =>
+        ${['Dashboard', 'Leaderboards', 'Feed', 'Challenges', 'Goals', 'Chat', 'Members', 'Analytics', 'Club'].map(t =>
     `<button data-tab="${t.toLowerCase()}" class="${t.toLowerCase() === tab ? 'on' : ''}">${t}</button>`).join('')}
       </div>
       <div id="gbody"></div>`;
@@ -100,7 +100,41 @@ export async function renderGroup(el, groupId) {
       if (tab === 'chat') return await showChat();
       if (tab === 'members') return await showMembers();
       if (tab === 'analytics') return await showAnalytics();
+      if (tab === 'club') return await showClub();
     } catch (e) { body().innerHTML = `<div class="notice warn">${esc(e.message)}</div>`; }
+  }
+
+  /* ================= CLUB (club dashboard + crew compatibility) ================= */
+
+  async function showClub() {
+    const [{ club }, { crew }] = await Promise.all([
+      api(`/groups/${groupId}/club`),
+      api(`/groups/${groupId}/crew-compatibility`).catch(() => ({ crew: null })),
+    ]);
+    const rec = (r, label) => `<div class="stat-tile tight"><div class="n" style="font-size:1.3rem">${r ? fmtDuration(r.timeS) : '–'}</div><div class="l">${label}${r ? ` · ${esc(r.name)}` : ''}</div></div>`;
+    body().innerHTML = `
+      <div class="grid cols3">
+        <div class="stat-tile"><div class="n">${fmtDistance(club.totalMeters)}</div><div class="l">total club metres</div></div>
+        <div class="stat-tile"><div class="n">${club.participationRatePct}%</div><div class="l">active this week</div></div>
+        <div class="stat-tile"><div class="n">${club.memberCount}</div><div class="l">members</div></div>
+      </div>
+      <div class="card"><h3>Club records</h3>
+        <div class="grid cols3">${rec(club.records.best2k, '2k')}${rec(club.records.best5k, '5k')}${rec(club.records.best6k, '6k')}</div>
+        <p class="muted small mt">Only members who share their 2k history are eligible.</p></div>
+      <div class="card"><h3>Most active (30 days)</h3>
+        ${club.mostActive.length ? `<table><thead><tr><th>Athlete</th><th>Metres</th><th>Sessions</th></tr></thead><tbody>
+        ${club.mostActive.map((m, i) => `<tr><td>${i < 3 ? ['🥇', '🥈', '🥉'][i] + ' ' : ''}${esc(m.name)}</td><td>${fmtDistance(m.meters)}</td><td>${m.workouts}</td></tr>`).join('')}
+        </tbody></table>` : '<p class="muted small">No shared activity yet.</p>'}</div>
+      ${crew ? `<div class="card"><h3>Crew compatibility</h3>
+        <p class="muted small">${esc(crew.note)}</p>
+        ${crew.suggestedPairs.length ? `<table><thead><tr><th>Suggested pairing</th><th>Match</th></tr></thead><tbody>
+        ${crew.suggestedPairs.map(p => `<tr><td>${esc(p.a)} &amp; ${esc(p.b)}${p.sameBoatClass ? ' <span class="badge">same boat class</span>' : ''}</td>
+          <td><div class="pbar" style="display:inline-block;width:80px;vertical-align:middle"><span style="width:${Math.max(0, p.score)}%"></span></div> ${p.score}%</td></tr>`).join('')}
+        </tbody></table>` : '<p class="muted small">Need more members sharing workouts to suggest pairings.</p>'}
+        <details class="mt"><summary class="small muted">Member training profiles</summary>
+        <table class="mt"><thead><tr><th>Athlete</th><th>Avg rate</th><th>Weekly</th><th>Consistency</th></tr></thead><tbody>
+        ${crew.members.map(m => `<tr><td>${esc(m.name)}</td><td>${m.avgStrokeRate || '–'} spm</td><td>${fmtDistance(m.weeklyMeters)}</td><td>${m.consistencyPct}%</td></tr>`).join('')}
+        </tbody></table></details></div>` : ''}`;
   }
 
   const tile = (n, l) => `<div class="stat-tile"><div class="n">${n}</div><div class="l">${l}</div></div>`;

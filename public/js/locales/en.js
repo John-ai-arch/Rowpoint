@@ -329,6 +329,15 @@ export const en = {
     conf_medium: 'Moderate confidence',
     conf_low: 'Low confidence',
   },
+  integrations: {
+    title: 'Devices & integrations',
+    manage: 'Integrations',
+    subtitle: 'Connect wearables and health platforms.',
+    note: 'These integrations are on the roadmap. RowPoint is architected to add them as drop-in adapters — none are collecting your data yet.',
+    planned: 'Planned',
+    connected: 'Connected',
+    bleNote: 'Bluetooth ergs and heart-rate straps are supported today on the Row and Heart Rate screens.',
+  },
   season: {
     title: 'Season',
     addRace: '+ Add race',

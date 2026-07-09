@@ -21,6 +21,7 @@ import { renderGroup } from './pages/group.js';
 import { renderWellness } from './pages/wellness.js';
 import { renderSettings } from './pages/settings.js';
 import { renderEquipment } from './pages/equipment.js';
+import { renderIntegrations } from './pages/integrations.js';
 import { renderAdmin } from './pages/admin.js';
 import { renderHrm } from './pages/hrm.js';
 import { hrManager } from './ble/sensors.js';
@@ -46,6 +47,7 @@ const routes = [
   { re: /^\/hr/, page: renderHrm, tab: 'hr' },
   { re: /^\/settings/, page: renderSettings, tab: 'home' },
   { re: /^\/equipment/, page: renderEquipment, tab: 'home' },
+  { re: /^\/integrations/, page: renderIntegrations, tab: 'home' },
   { re: /^\/admin/, page: renderAdmin, tab: 'home' },
 ];
 

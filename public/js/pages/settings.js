@@ -67,7 +67,10 @@ export function renderSettings(el) {
   <div class="card">
     <h3>${esc(t('equip.title'))}</h3>
     <p class="muted small">${esc(t('equip.settingsHint'))}</p>
-    <a class="btn secondary" href="#/equipment">🧰 ${esc(t('equip.manage'))}</a>
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <a class="btn secondary" href="#/equipment">🧰 ${esc(t('equip.manage'))}</a>
+      <a class="btn secondary" href="#/integrations">⌚ ${esc(t('integrations.manage'))}</a>
+    </div>
   </div>
 
   <div class="card">
