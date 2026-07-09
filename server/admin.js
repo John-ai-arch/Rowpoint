@@ -528,6 +528,18 @@ adminRouter.get('/observatory/export', (req, res) => {
   res.json({ observatory: observatoryExport() });
 });
 
+// Grant / revoke the Research Administrator permission. Owner-only: only the
+// hard-coded owner account can decide who may use the research platform.
+adminRouter.post('/users/:id/research-admin', (req, res) => {
+  if (req.user.email !== config.ADMIN_EMAIL) throw new ApiError(403, 'Only the owner can grant research access.', 'owner_only');
+  const u = db.prepare('SELECT id, email FROM users WHERE id = ?').get(req.params.id);
+  if (!u) throw new ApiError(404, 'User not found.', 'not_found');
+  const grant = req.body?.grant !== false;
+  db.prepare('UPDATE users SET research_admin = ? WHERE id = ?').run(grant ? 1 : 0, u.id);
+  audit(req.user.id, 'grant.research_admin', u.email, { grant });
+  res.json({ ok: true, researchAdmin: grant });
+});
+
 adminRouter.get('/db-stats', (req, res) => {
   const pragma = (name) => { try { return db.prepare(`PRAGMA ${name}`).get()?.[name]; } catch { return null; } };
   const growth = db.prepare(

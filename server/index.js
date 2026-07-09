@@ -54,6 +54,7 @@ import { observatoryRouter } from './observatoryRouter.js';
 import { strokeRouter } from './stroke.js';
 import { aiRouter } from './aiRouter.js';
 import { adminRouter } from './admin.js';
+import { researchAdminRouter } from './researchAdmin.js';
 import { csrfProtection } from './cookies.js';
 import { scheduleBackups } from './backup.js';
 import { attachRealtime } from './realtime.js';
@@ -127,6 +128,7 @@ export function createApp() {
   app.use('/api/stroke', strokeRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/research-admin', researchAdminRouter);
 
   app.get('/api/status', (req, res) => res.json({ ok: true, name: 'RowPoint', ts: Date.now() }));
 

@@ -26,6 +26,7 @@ import { renderSettings } from './pages/settings.js';
 import { renderEquipment } from './pages/equipment.js';
 import { renderIntegrations } from './pages/integrations.js';
 import { renderAdmin } from './pages/admin.js';
+import { renderResearchDashboard } from './pages/researchDashboard.js';
 import { renderHrm } from './pages/hrm.js';
 import { hrManager } from './ble/sensors.js';
 
@@ -55,6 +56,7 @@ const routes = [
   { re: /^\/equipment/, page: renderEquipment, tab: 'home' },
   { re: /^\/integrations/, page: renderIntegrations, tab: 'home' },
   { re: /^\/admin/, page: renderAdmin, tab: 'home' },
+  { re: /^\/research$/, page: renderResearchDashboard, tab: 'home' },
 ];
 
 let cleanup = null;

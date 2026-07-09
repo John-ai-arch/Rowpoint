@@ -8,7 +8,7 @@ import { db, inTransaction } from './db.js';
 import { config } from './config.js';
 import { sendEmail, mailConfigured } from './mailer.js';
 import { rateLimit } from './ratelimit.js';
-import { authRequired, isAdminUser, recordAuthEvent } from './middleware.js';
+import { authRequired, isAdminUser, isResearchAdmin, recordAuthEvent } from './middleware.js';
 import { setSessionCookies, clearSessionCookies, parseCookies, SESSION_COOKIE } from './cookies.js';
 import {
   uuid, now, hashPassword, verifyPassword, signToken, teamCode,
@@ -49,7 +49,7 @@ export function publicUser(u) {
     sessionMinutes: u.session_minutes, club: u.club, boatClass: u.boat_class,
     sex: u.sex, yearsRowing: u.years_rowing, competitionLevel: u.competition_level,
     clubType: u.club_type, trainingEnvironment: u.training_environment,
-    country: u.country, region: u.region, researchAdmin: !!u.research_admin,
+    country: u.country, region: u.region, researchAdmin: isResearchAdmin(u),
     emailVerified: !!u.email_verified, researchOptIn: !!u.research_opt_in,
     shareWorkoutsTeam: !!u.share_workouts_team, share2kHistory: !!u.share_2k_history,
     shareWellnessCoach: !!u.share_wellness_coach, shareProfile: !!u.share_profile,

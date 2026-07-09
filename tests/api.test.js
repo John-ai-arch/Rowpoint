@@ -1558,6 +1558,38 @@ test('stroke analysis: modular pipeline computes rate/ratio/consistency; annotat
   assert.equal((await req(`/stroke/${a.id}`, { method: 'DELETE', token: ath.token })).status, 200);
 });
 
+/* ---------------- research platform: access control + dashboard (Feature C) ---------------- */
+
+test('research platform is strictly gated: regular users denied, owner (research admin) allowed', async () => {
+  assert.equal((await req('/research-admin/participants', { token: rower.token })).status, 403, 'rower denied');
+  assert.equal((await req('/research-admin/quality', { token: coach.token })).status, 403, 'coach denied');
+  const p = await req('/research-admin/participants', { token: admin.token });
+  assert.equal(p.status, 200);
+  assert.ok(typeof p.body.participants.totalParticipants === 'number' && p.body.participants.minCohort === 8);
+});
+
+test('research platform: quality, correlations, and audit are aggregate-only with honest framing', async () => {
+  const q = await req('/research-admin/quality', { token: admin.token });
+  assert.equal(q.status, 200);
+  assert.ok(typeof q.body.quality.totalRecords === 'number' && q.body.quality.flagCounts);
+  assert.match(q.body.quality.note, /retained/i, 'flagged data is retained, not deleted');
+  const c = await req('/research-admin/correlations', { token: admin.token });
+  assert.ok('suppressed' in c.body.correlations);
+  if (!c.body.correlations.suppressed) assert.match(c.body.correlations.note, /causation/i, 'associations are not causal');
+  // audit trail records research views and never carries PII
+  const a = await req('/research-admin/audit', { token: admin.token });
+  assert.ok(Array.isArray(a.body.audit) && a.body.audit.some(x => x.action.startsWith('research.')), 'research views audited');
+  assert.ok(!JSON.stringify(a.body.audit).includes('@'), 'no emails in the research audit payload');
+});
+
+test('research admin grant is owner-only', async () => {
+  const target = await makeUser('research-grantee@test.com', 'coach');
+  assert.equal((await req(`/admin/users/${target.user.id}/research-admin`, { method: 'POST', token: rower.token, body: { grant: true } })).status, 403, 'non-admin cannot grant');
+  const g = await req(`/admin/users/${target.user.id}/research-admin`, { method: 'POST', token: admin.token, body: { grant: true } });
+  assert.equal(g.status, 200);
+  assert.equal(g.body.researchAdmin, true);
+});
+
 /* ---------------- research-grade data collection (Feature A/B) ---------------- */
 
 test('research provenance: sync records measurement confidence, missing flags, and quality flags', async () => {

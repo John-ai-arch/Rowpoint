@@ -64,6 +64,21 @@ export function adminRequired(req, res, next) {
   next();
 }
 
+/** True when this admin additionally holds the Research Administrator grant. */
+export function isResearchAdmin(user) {
+  return isAdminUser(user) && (!!user.research_admin || user.email === config.ADMIN_EMAIL);
+}
+
+// The research platform is strictly gated: an authenticated ADMIN who ALSO holds
+// the explicit Research Administrator grant (the owner always does). Regular
+// users can never reach any research-database endpoint.
+export function researchAdminRequired(req, res, next) {
+  if (!isResearchAdmin(req.user)) {
+    throw new ApiError(403, 'Research Administrator permission required.', 'not_research_admin');
+  }
+  next();
+}
+
 export function audit(adminUserId, action, target, details) {
   db.prepare('INSERT INTO audit_log (id, admin_user_id, action, target, details_json, created_at) VALUES (?,?,?,?,?,?)')
     .run(uuid(), adminUserId, action, target || null, details ? JSON.stringify(details) : null, now());

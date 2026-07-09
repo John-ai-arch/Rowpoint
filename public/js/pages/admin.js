@@ -8,8 +8,11 @@ export async function renderAdmin(el) {
     return;
   }
   const TABS = ['Overview', 'Analytics', 'AI', 'Users', 'Research', 'System', 'Security', 'Moderation', 'Broadcast', 'Audit'];
-  el.innerHTML = `<h1>Admin</h1>
-    <div class="seg mb" id="tabs" style="flex-wrap:wrap">
+  el.innerHTML = `<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <h1 style="margin:0">Admin</h1>
+      ${state.user?.researchAdmin ? '<a class="btn secondary sm" href="#/research">🔬 Research platform</a>' : ''}
+    </div>
+    <div class="seg mb mt" id="tabs" style="flex-wrap:wrap">
       ${TABS.map((t, i) => `<button data-tab="${t.toLowerCase()}" class="${i === 0 ? 'on' : ''}">${t}</button>`).join('')}
     </div>
     <div id="tabBody"></div>`;
