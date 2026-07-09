@@ -1341,4 +1341,35 @@ test('performance: /summary returns readiness and predictions together', async (
   assert.ok(r.body.readiness && r.body.predictions);
 });
 
+/* ---------------- AI training journal ---------------- */
+
+test('journal: workouts carry the AI coaching summary and an editable, searchable note', async () => {
+  const u = await makeUser('journal@test.com');
+  const body = workoutBody([120, 121, 122, 123]);
+  await req('/workouts/sync', { method: 'POST', token: u.token, body });
+
+  const j1 = await req('/workouts/journal', { token: u.token });
+  assert.equal(j1.status, 200);
+  assert.ok(j1.body.entries.length >= 1);
+  const entry = j1.body.entries.find(e => e.id === body.id);
+  assert.ok(entry, 'the synced workout appears in the journal');
+  assert.ok(entry.coachSummary, 'the AI post-workout summary is included');
+  assert.equal(entry.note, null, 'no note yet');
+
+  // Save a note.
+  const save = await req(`/workouts/${body.id}/note`, { method: 'PATCH', token: u.token, body: { note: 'Felt strong on the second 500. Focus: catch timing.' } });
+  assert.equal(save.status, 200);
+  assert.match(save.body.note, /catch timing/);
+
+  // Note comes back and is searchable.
+  const j2 = await req('/workouts/journal?q=catch', { token: u.token });
+  assert.ok(j2.body.entries.some(e => e.id === body.id && /catch timing/.test(e.note)), 'note is searchable');
+  const j3 = await req('/workouts/journal?q=zzz-no-match', { token: u.token });
+  assert.equal(j3.body.entries.length, 0, 'search excludes non-matches');
+
+  // Notes are account-scoped: another user cannot annotate this workout.
+  const other = await makeUser('journal-other@test.com');
+  assert.equal((await req(`/workouts/${body.id}/note`, { method: 'PATCH', token: other.token, body: { note: 'x' } })).status, 404);
+});
+
 test.after(() => { server.close(); });

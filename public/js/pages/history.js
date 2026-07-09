@@ -11,7 +11,8 @@ export async function renderHistory(el) {
   }
   el.innerHTML = `<h1>History</h1>
     <div class="row between mb"><span class="muted small">${workouts.length} workouts · newest first</span>
-      <a class="btn ghost sm" href="/api/users/me/export.csv" onclick="return false" id="exportBtn">Export CSV</a></div>
+      <span class="row" style="gap:6px"><a class="btn secondary sm" href="#/journal">📓 Journal</a>
+      <a class="btn ghost sm" href="/api/users/me/export.csv" onclick="return false" id="exportBtn">Export CSV</a></span></div>
     ${workouts.length ? workouts.map(w => `
       <a class="card tight list-item" style="color:inherit" href="#/workout/${w.id}">
         <div class="avatar">${w.machine_type === 'bike' ? '🚲' : '🚣'}</div>

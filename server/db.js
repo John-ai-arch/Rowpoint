@@ -374,6 +374,10 @@ function ensureColumn(table, name, ddl) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
   if (!cols.some(c => c.name === name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
 }
+// AI Training Journal: the athlete's own free-text note per workout (the AI
+// coaching summary already lives in ai_feedback_json). Searchable together.
+ensureColumn('workouts', 'user_note', 'user_note TEXT');
+
 // Heart-rate subsystem: per-workout HR time series + zone summary, and
 // user-level max/resting HR for zone calculation.
 ensureColumn('workouts', 'hr_series_json', 'hr_series_json TEXT');

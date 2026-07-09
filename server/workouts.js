@@ -225,6 +225,44 @@ workoutsRouter.get('/', (req, res) => {
   });
 });
 
+/* ---- AI Training Journal (§6 vision): per-workout coaching summary (already
+   generated at sync) + the athlete's own note, searchable together. ---- */
+
+workoutsRouter.get('/journal', (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 40, 200);
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const rows = db.prepare(
+    `SELECT id, started_at, machine_type, total_distance_m, total_time_s, avg_split_s,
+            ai_feedback_json, user_note
+     FROM workouts WHERE user_id = ? ORDER BY started_at DESC LIMIT 400`).all(req.user.id);
+  let entries = rows.map(w => {
+    const fb = safeJson(w.ai_feedback_json) || {};
+    return {
+      id: w.id, startedAt: w.started_at, machineType: w.machine_type,
+      distanceM: Math.round(w.total_distance_m || 0), timeS: Math.round(w.total_time_s || 0),
+      avgSplitS: w.avg_split_s || null,
+      coachSummary: fb.text || null,      // the AI's short post-workout summary
+      pacing: fb.classification || null,
+      note: w.user_note || null,
+    };
+  });
+  if (q) {
+    entries = entries.filter(e =>
+      (e.coachSummary && e.coachSummary.toLowerCase().includes(q))
+      || (e.note && e.note.toLowerCase().includes(q))
+      || (e.pacing && e.pacing.toLowerCase().includes(q)));
+  }
+  res.json({ entries: entries.slice(0, limit), total: entries.length });
+});
+
+workoutsRouter.patch('/:id/note', (req, res) => {
+  const w = db.prepare('SELECT id FROM workouts WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!w) throw new ApiError(404, 'Workout not found.', 'not_found');
+  const note = String(req.body?.note ?? '').slice(0, 2000);
+  db.prepare('UPDATE workouts SET user_note = ? WHERE id = ?').run(note || null, w.id);
+  res.json({ ok: true, note: note || null });
+});
+
 workoutsRouter.get('/:id', (req, res) => {
   const w = db.prepare('SELECT * FROM workouts WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!w) throw new ApiError(404, 'Workout not found.', 'not_found');

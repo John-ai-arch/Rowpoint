@@ -8,6 +8,7 @@ import { renderRow } from './pages/row.js';
 import { renderProgress } from './pages/progress.js';
 import { renderPlan } from './pages/plan.js';
 import { renderHistory } from './pages/history.js';
+import { renderJournal } from './pages/journal.js';
 import { renderWorkoutDetail } from './pages/workoutDetail.js';
 import { renderBuilder } from './pages/builder.js';
 import { renderTeams } from './pages/teams.js';
@@ -28,6 +29,7 @@ const routes = [
   { re: /^\/progress/, page: renderProgress, tab: 'progress' },
   { re: /^\/plan/, page: renderPlan, tab: 'progress' },
   { re: /^\/history$/, page: renderHistory, tab: 'history' },
+  { re: /^\/journal/, page: renderJournal, tab: 'history' },
   { re: /^\/workout\/([\w-]+)/, page: renderWorkoutDetail, tab: 'history' },
   { re: /^\/builder/, page: renderBuilder, tab: 'row' },
   { re: /^\/teams$/, page: renderTeams, tab: 'teams' },
