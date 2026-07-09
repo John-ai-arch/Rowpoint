@@ -1558,6 +1558,47 @@ test('stroke analysis: modular pipeline computes rate/ratio/consistency; annotat
   assert.equal((await req(`/stroke/${a.id}`, { method: 'DELETE', token: ath.token })).status, 200);
 });
 
+/* ---------------- research-grade data collection (Feature A/B) ---------------- */
+
+test('research provenance: sync records measurement confidence, missing flags, and quality flags', async () => {
+  const u = await makeUser('prov@test.com'); // research_opt_in defaults on
+  const s = await req('/workouts/sync', {
+    method: 'POST', token: u.token,
+    body: { ...workoutBody([120, 121, 122, 123]), client: { tzOffsetMin: 60, deviceType: 'web', sensorSource: 'manual' } },
+  });
+  assert.equal(s.status, 201);
+  assert.equal(s.body.research.contributed, true);
+  assert.ok(s.body.research.measurementConfidence > 0 && s.body.research.measurementConfidence <= 1, 'confidence in (0,1]');
+  assert.ok(Array.isArray(s.body.research.qualityFlags) && Array.isArray(s.body.research.missing));
+});
+
+test('research data quality: implausible / incomplete records are flagged and RETAINED (never deleted)', async () => {
+  const u = await makeUser('qc@test.com');
+  // no HR and no power → incomplete_sensors; a 300 bpm split clamps to 250 → unrealistic_heart_rate
+  const bad = {
+    id: uuid(), totalDistanceM: 500, totalTimeS: 120, machineType: 'rower',
+    startedAt: Math.floor(Date.now() / 1000) - 120,
+    splits: [{ distanceM: 500, timeS: 120, avgPaceSPer500m: 120, avgStrokeRate: 24, avgHeartRate: 300 }],
+  };
+  const s = await req('/workouts/sync', { method: 'POST', token: u.token, body: bad });
+  assert.equal(s.status, 201);
+  assert.ok(s.body.research.qualityFlags.includes('unrealistic_heart_rate'), 'implausible HR flagged');
+  // Retained, never deleted — the workout is still in the athlete's history.
+  assert.equal((await req('/workouts/', { token: u.token })).body.workouts.length, 1);
+});
+
+test('research demographics profile is optional, editable, and enum-validated', async () => {
+  const u = await makeUser('demo@test.com');
+  const p = await req('/training/profile', { method: 'PATCH', token: u.token, body: {
+    sex: 'female', yearsRowing: 6, competitionLevel: 'university', trainingEnvironment: 'water', country: 'Netherlands',
+  } });
+  assert.equal(p.status, 200);
+  assert.equal(p.body.profile.sex, 'female');
+  assert.equal(p.body.profile.competitionLevel, 'university');
+  assert.equal((await req('/training/profile', { token: u.token })).body.profile.country, 'Netherlands');
+  assert.equal((await req('/training/profile', { method: 'PATCH', token: u.token, body: { competitionLevel: 'galactic' } })).status, 400, 'bad enum rejected');
+});
+
 /* ---------------- research observatory (moat) ---------------- */
 
 test('observatory: returns anonymous aggregate percentiles and never individual data', async () => {

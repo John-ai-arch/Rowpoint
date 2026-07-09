@@ -17,6 +17,12 @@ trainingRouter.use(authRequired);
 
 const EXPERIENCE = ['beginner', 'intermediate', 'advanced', 'elite'];
 const RACE_DISTANCES = ['2000m', '5000m', '6000m', 'head', 'marathon'];
+// Expanded, optional research demographics (see server/research/dictionary.js
+// for why each is collected). All free-choice, editable, never required.
+const SEX = ['female', 'male', 'other', 'prefer_not'];
+const COMP_LEVEL = ['recreational', 'club', 'school', 'university', 'national', 'elite'];
+const CLUB_TYPE = ['community', 'school', 'university', 'masters', 'national', 'none'];
+const TRAIN_ENV = ['erg', 'water', 'mixed'];
 
 /* ---------------- athlete profile ---------------- */
 
@@ -39,6 +45,14 @@ function profileOf(u) {
     goalEvent: u.goal_target_event ?? null,
     goalDate: u.goal_target_date ?? null,
     goalType: u.goal_type ?? null,
+    // Expanded research demographics (optional).
+    sex: u.sex ?? null,
+    yearsRowing: u.years_rowing ?? null,
+    competitionLevel: u.competition_level ?? null,
+    clubType: u.club_type ?? null,
+    trainingEnvironment: u.training_environment ?? null,
+    country: u.country ?? null,
+    region: u.region ?? null,
   };
 }
 
@@ -71,6 +85,18 @@ trainingRouter.patch('/profile', (req, res) => {
   // Goal event/date reuse the existing user goal fields (single source of truth).
   if ('goalEvent' in b) set('goal_target_event', String(b.goalEvent || '').slice(0, 120) || null);
   if ('goalDate' in b) set('goal_target_date', b.goalDate || null);
+  // Expanded research demographics — all optional; enums validated.
+  const enumSet = (col, val, allowed, name) => {
+    if (val && !allowed.includes(val)) throw badRequest(`Unknown ${name}.`);
+    set(col, val || null);
+  };
+  if ('sex' in b) enumSet('sex', b.sex, SEX, 'sex');
+  if ('yearsRowing' in b) set('years_rowing', clampInt(b.yearsRowing, 0, 80));
+  if ('competitionLevel' in b) enumSet('competition_level', b.competitionLevel, COMP_LEVEL, 'competition level');
+  if ('clubType' in b) enumSet('club_type', b.clubType, CLUB_TYPE, 'club type');
+  if ('trainingEnvironment' in b) enumSet('training_environment', b.trainingEnvironment, TRAIN_ENV, 'training environment');
+  if ('country' in b) set('country', String(b.country || '').slice(0, 60) || null);
+  if ('region' in b) set('region', String(b.region || '').slice(0, 80) || null);
 
   if (sets.length) db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, req.user.id);
   const fresh = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);

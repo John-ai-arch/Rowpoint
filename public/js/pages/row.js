@@ -333,6 +333,15 @@ export async function renderRow(el) {
       plan, assignmentId: assignmentId || undefined,
       splits: session.splits, forceCurves: session.curves,
       hrSeries: hrSeries?.length ? hrSeries : undefined,
+      // Research provenance (only used if the athlete opts into research):
+      // timezone, device and sensor source make every record reproducible.
+      client: {
+        tzOffsetMin: -new Date().getTimezoneOffset(),
+        deviceType: /android/i.test(navigator.userAgent) ? 'android'
+          : /iphone|ipad|ipod/i.test(navigator.userAgent) ? 'ios' : 'web',
+        sensorSource: session.adapter?.machineId
+          ? (session.adapter?.machineType === 'bike' ? 'ble_ftms' : 'ble_pm') : 'manual',
+      },
     };
     queueWorkout(state.user.id, payload); // local first, always (§6)
     sessionStorage.removeItem('rp_draft_plan');

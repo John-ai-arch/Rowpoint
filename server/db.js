@@ -420,6 +420,41 @@ ensureColumn('users', 'injury_history', 'injury_history TEXT');
 ensureColumn('users', 'club', 'club TEXT');
 ensureColumn('users', 'boat_class', 'boat_class TEXT');
 
+// Expanded, optional, editable research demographics (only enter the research
+// dataset when research_share_demographics is on). Coarsened where needed at
+// write time so no single field is a quasi-identifier.
+ensureColumn('users', 'sex', 'sex TEXT');                               // optional: female|male|other|prefer_not
+ensureColumn('users', 'years_rowing', 'years_rowing INTEGER');
+ensureColumn('users', 'competition_level', 'competition_level TEXT');   // recreational|club|school|university|national|elite
+ensureColumn('users', 'club_type', 'club_type TEXT');                   // community|school|university|masters|national|none
+ensureColumn('users', 'training_environment', 'training_environment TEXT'); // erg|water|mixed
+ensureColumn('users', 'country', 'country TEXT');                       // ISO country name/code (coarse)
+ensureColumn('users', 'region', 'region TEXT');
+// Grant flag: an admin who may use the research platform. The owner always may.
+ensureColumn('users', 'research_admin', 'research_admin INTEGER NOT NULL DEFAULT 0');
+
+// Research provenance & reproducibility (Feature A). Every contribution records
+// where/how it was measured and the software/schema that produced it, so a
+// derived value can always be traced back and old data stays interpretable.
+ensureColumn('research_workouts', 'sw_version', 'sw_version TEXT');
+ensureColumn('research_workouts', 'schema_version', 'schema_version INTEGER');
+ensureColumn('research_workouts', 'tz_offset_min', 'tz_offset_min INTEGER');   // local UTC offset at capture
+ensureColumn('research_workouts', 'device_type', 'device_type TEXT');          // web|ios|android (coarse)
+ensureColumn('research_workouts', 'sensor_source', 'sensor_source TEXT');      // ble_pm|ble_ftms|manual|hr_strap|mixed
+ensureColumn('research_workouts', 'firmware_version', 'firmware_version TEXT'); // when available (usually null)
+ensureColumn('research_workouts', 'measurement_confidence', 'measurement_confidence REAL'); // 0..1 completeness
+ensureColumn('research_workouts', 'missing_flags', 'missing_flags TEXT');      // JSON: which measures absent
+ensureColumn('research_workouts', 'quality_flags', 'quality_flags TEXT');      // JSON array of QC flags (Feature B)
+// Coarsened demographics travelling with a contribution (consent-gated).
+ensureColumn('research_workouts', 'age_range', 'age_range TEXT');              // e.g. 18-24 (5-year-ish bands)
+ensureColumn('research_workouts', 'sex', 'sex TEXT');
+ensureColumn('research_workouts', 'height_band_cm', 'height_band_cm INTEGER'); // 5cm bands
+ensureColumn('research_workouts', 'years_rowing', 'years_rowing INTEGER');
+ensureColumn('research_workouts', 'competition_level', 'competition_level TEXT');
+ensureColumn('research_workouts', 'club_type', 'club_type TEXT');
+ensureColumn('research_workouts', 'training_environment', 'training_environment TEXT');
+ensureColumn('research_workouts', 'country', 'country TEXT');
+
 // AI coach recommendations: generation source (llm | analysis_engine |
 // guardrail), model confidence, and adherence tracking (followed is set when
 // a workout lands on the recommendation's date).
@@ -733,7 +768,7 @@ metaSet('last_boot_at', Math.floor(Date.now() / 1000));
    gate for any *destructive* future migration (which must branch on the stored
    version rather than run unconditionally). Bump it whenever the schema
    changes. */
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 const priorSchema = Number(metaGet('schema_version') || 0);
 if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
 export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };

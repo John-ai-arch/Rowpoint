@@ -55,6 +55,26 @@ export function renderSettings(el) {
   </div>
 
   <div class="card">
+    <h3>Research profile <span class="muted small">(optional)</span></h3>
+    <p class="muted small">These optional fields let anonymized research group you with more precise cohorts. Each is explained; leave any blank. They only enter the dataset while “Include demographics” above is on — always coarsened (e.g. age becomes a broad band, height a 5&nbsp;cm band) so no field can identify you.</p>
+    <div class="grid cols2">
+      <label class="field"><span>Biological sex <span class="muted">— physiological differences in training response</span></span>
+        <select id="rf_sex">${sel(['', 'female', 'male', 'other', 'prefer_not'], ['—', 'Female', 'Male', 'Other', 'Prefer not to say'], u.sex)}</select></label>
+      <label class="field"><span>Years rowing <span class="muted">— training age vs calendar age</span></span>
+        <input id="rf_years" type="number" min="0" max="80" value="${u.yearsRowing ?? ''}"></label>
+      <label class="field"><span>Competition level <span class="muted">— context for training load</span></span>
+        <select id="rf_comp">${sel(['', 'recreational', 'club', 'school', 'university', 'national', 'elite'], ['—', 'Recreational', 'Club', 'School', 'University', 'National', 'Elite'], u.competitionLevel)}</select></label>
+      <label class="field"><span>Club type <span class="muted">— training environment differs by setting</span></span>
+        <select id="rf_club">${sel(['', 'community', 'school', 'university', 'masters', 'national', 'none'], ['—', 'Community', 'School', 'University', 'Masters', 'National', 'None'], u.clubType)}</select></label>
+      <label class="field"><span>Training environment <span class="muted">— erg vs water changes the data</span></span>
+        <select id="rf_env">${sel(['', 'erg', 'water', 'mixed'], ['—', 'Erg', 'On water', 'Mixed'], u.trainingEnvironment)}</select></label>
+      <label class="field"><span>Country <span class="muted">— regional training patterns</span></span>
+        <input id="rf_country" maxlength="60" value="${esc(u.country || '')}"></label>
+    </div>
+    <button class="secondary" id="rf_save">Save research profile</button>
+  </div>
+
+  <div class="card">
     <h3>${esc(t('settings.notifications'))}</h3>
     <p class="muted small">Each category is separate — no blanket switch.</p>
     ${toggle('np_workout_reminder', 'Workout reminders', np.workout_reminder)}
@@ -103,7 +123,25 @@ export function renderSettings(el) {
     return `<div class="toggle"><div>${label}</div>
       <label class="switch"><input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span class="sl"></span></label></div>`;
   }
+  function sel(vals, labels, cur) {
+    return vals.map((v, i) => `<option value="${esc(v)}" ${cur === v || (!cur && v === '') ? 'selected' : ''}>${esc(labels[i])}</option>`).join('');
+  }
   const chk = (id) => el.querySelector(`#${id}`).checked;
+
+  // Research profile → the training-profile endpoint (single source of truth).
+  el.querySelector('#rf_save').onclick = async () => {
+    try {
+      await api('/training/profile', { method: 'PATCH', body: {
+        sex: el.querySelector('#rf_sex').value || null,
+        yearsRowing: el.querySelector('#rf_years').value ? Number(el.querySelector('#rf_years').value) : null,
+        competitionLevel: el.querySelector('#rf_comp').value || null,
+        clubType: el.querySelector('#rf_club').value || null,
+        trainingEnvironment: el.querySelector('#rf_env').value || null,
+        country: el.querySelector('#rf_country').value.trim() || null,
+      } });
+      toast('Research profile saved.', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   async function patch(body, msg) {
     try {

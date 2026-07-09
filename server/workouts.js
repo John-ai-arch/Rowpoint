@@ -186,9 +186,25 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
   const { newBadges } = onWorkoutSynced(req.user, savedWorkout, { newPb });
 
   /* ---- research contribution (§5.2, write-time opt-in check) ---- */
-  const research = contributeWorkout(req.user, savedWorkout, normSplits);
+  // Provenance travels with the workout from the client (timezone, device,
+  // sensor source) so every research record is traceable & reproducible.
+  const provenance = {
+    tzOffsetMin: b.client?.tzOffsetMin,
+    deviceType: b.client?.deviceType,
+    sensorSource: b.client?.sensorSource,
+    firmwareVersion: b.client?.firmwareVersion,
+  };
+  const research = contributeWorkout(req.user, savedWorkout, normSplits, provenance);
 
-  res.status(201).json({ ok: true, workoutId: b.id, aiFeedback, newPb, newBadges, research: { contributed: research.contributed } });
+  res.status(201).json({
+    ok: true, workoutId: b.id, aiFeedback, newPb, newBadges,
+    research: {
+      contributed: research.contributed,
+      measurementConfidence: research.confidence ?? null,
+      missing: research.missing ?? null,
+      qualityFlags: research.qualityFlags ?? null,
+    },
+  });
 });
 
 export function upsertLeaderboard(scopeType, scopeId, workoutKey, user, avgSplit, dist, time, finished) {

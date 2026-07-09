@@ -24,6 +24,13 @@ export const config = {
   dbFile: process.env.ROWPOINT_DB || path.join(DATA_DIR, 'rowpoint.db'),
   port: Number(process.env.PORT || 3000),
 
+  // Versioning for research provenance & reproducibility. SOFTWARE_VERSION is
+  // stamped on every research contribution and export; RESEARCH_SCHEMA_VERSION
+  // tracks the shape of the anonymized research dataset (bump when a
+  // research_* field's meaning changes so old exports stay interpretable).
+  softwareVersion: process.env.ROWPOINT_VERSION || 'rowpoint-1.3.0',
+  researchSchemaVersion: 2,
+
   // §3.1 — Admin access is tied, server-side, to exactly this email address.
   // This is intentionally a hard-coded constant, NOT an environment variable
   // and NOT a database flag, per the specification.

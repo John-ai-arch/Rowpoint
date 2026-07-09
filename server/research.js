@@ -13,7 +13,9 @@
 //  - demographics (birth decade, weight class) ONLY when the athlete has the
 //    separate demographics consent enabled, independent of the main toggle.
 import { db } from './db.js';
+import { config } from './config.js';
 import { uuid, now, researchId, safeJson } from './util.js';
+import { qualityFlags } from './research/quality.js';
 
 function activeStudyTags() {
   return db.prepare('SELECT tag FROM studies WHERE active = 1').all().map(r => r.tag);
@@ -21,18 +23,56 @@ function activeStudyTags() {
 
 const birthDecade = (year) => Number.isFinite(year) ? Math.floor(year / 10) * 10 : null;
 
-export function contributeWorkout(user, workout, splits) {
+// Coarse, privacy-preserving demographic bands (no single field is a
+// quasi-identifier). Age uses broad life-stage bands; height uses 5 cm bands.
+function ageRange(birthYear, nowS) {
+  if (!Number.isFinite(birthYear)) return null;
+  const age = new Date(nowS * 1000).getUTCFullYear() - birthYear;
+  if (age < 18) return 'under_18';
+  if (age <= 24) return '18-24';
+  if (age <= 34) return '25-34';
+  if (age <= 44) return '35-44';
+  if (age <= 54) return '45-54';
+  if (age <= 64) return '55-64';
+  return '65_plus';
+}
+const heightBand = (cm) => (Number.isFinite(cm) && cm > 0 ? Math.round(cm / 5) * 5 : null);
+
+// Fraction of the core measures actually present → a data-completeness score,
+// plus an explicit list of which measures were missing (never silently null).
+function completeness(workout, splits) {
+  const checks = {
+    distance: Number.isFinite(workout.total_distance_m) && workout.total_distance_m > 0,
+    time: Number.isFinite(workout.total_time_s) && workout.total_time_s > 0,
+    pace: Number.isFinite(workout.avg_split_s) && workout.avg_split_s > 0,
+    strokeRate: Number.isFinite(workout.avg_stroke_rate) && workout.avg_stroke_rate > 0,
+    heartRate: Number.isFinite(workout.avg_heart_rate) && workout.avg_heart_rate > 0,
+    power: Number.isFinite(workout.avg_power_watts) && workout.avg_power_watts > 0,
+    splits: Array.isArray(splits) && splits.length > 0,
+  };
+  const present = Object.values(checks).filter(Boolean).length;
+  const missing = Object.entries(checks).filter(([, v]) => !v).map(([k]) => k);
+  return { confidence: Math.round((present / Object.keys(checks).length) * 100) / 100, missing };
+}
+
+export function contributeWorkout(user, workout, splits, provenance = {}) {
   if (!user.research_opt_in) return { contributed: false, reason: 'opted_out' };
   if (!user.email_verified) return { contributed: false, reason: 'unverified' };
   const rid = researchId(user.id);
   const tags = activeStudyTags();
+  const nowS = now();
   const stmt = db.prepare(`INSERT INTO research_workouts (
       id, research_id, study_tag, machine_type, workout_type, started_at,
       total_distance_m, total_time_s, avg_split_s, avg_stroke_rate,
       avg_heart_rate, avg_power_watts, splits_json, birth_decade, weight_class,
       goal_type, max_heart_rate, min_heart_rate, hr_zones_json, hr_drift_pct,
-      hr_series_json, equipment, contributed_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      hr_series_json, equipment,
+      sw_version, schema_version, tz_offset_min, device_type, sensor_source,
+      firmware_version, measurement_confidence, missing_flags, quality_flags,
+      age_range, sex, height_band_cm, years_rowing, competition_level,
+      club_type, training_environment, country,
+      contributed_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const splitsJson = JSON.stringify((splits || []).map(s => ({
     i: s.split_index, d: s.distance_m, t: s.time_s, p: s.avg_pace_s_per_500m,
     r: s.avg_stroke_rate, h: s.avg_heart_rate, w: s.avg_power_watts,
@@ -41,15 +81,17 @@ export function contributeWorkout(user, workout, splits) {
 
   // Equipment descriptor: the machine class plus a coarse connection kind —
   // never the raw peripheral id, which could fingerprint a specific gym.
-  const equipment = [workout.machine_type || 'rower', workout.machine_id ? 'ble_monitor' : 'manual']
-    .join('/');
+  const equipment = [workout.machine_type || 'rower', workout.machine_id ? 'ble_monitor' : 'manual'].join('/');
+  const sensorSource = provenance.sensorSource
+    || (workout.machine_id ? (workout.machine_type === 'bike' ? 'ble_ftms' : 'ble_pm') : 'manual');
+  const deviceType = ['web', 'ios', 'android'].includes(provenance.deviceType) ? provenance.deviceType : 'web';
+  const tzOffset = Number.isFinite(Number(provenance.tzOffsetMin)) ? Math.trunc(Number(provenance.tzOffsetMin)) : null;
 
-  // HR detail travels with the contribution only when it exists; the zone
-  // summary keeps zoneSeconds + drift but drops the athlete's max-HR setting
-  // used for the calculation (a quasi-identifier when combined with age).
   const hrZones = safeJson(workout.hr_zones_json);
   const hrZonesOut = hrZones ? JSON.stringify({ zoneSeconds: hrZones.zoneSeconds }) : null;
   const shareDemographics = !!user.research_share_demographics;
+  const { confidence, missing } = completeness(workout, splits);
+  const flags = qualityFlags(workout, splits);
 
   for (const tag of tags) {
     stmt.run(uuid(), rid, tag, workout.machine_type, workoutType, workout.started_at,
@@ -62,9 +104,20 @@ export function contributeWorkout(user, workout, splits) {
       workout.max_heart_rate ?? null, workout.min_heart_rate ?? null,
       hrZonesOut, hrZones?.driftPct ?? null,
       workout.hr_series_json ?? null,
-      equipment, now());
+      equipment,
+      config.softwareVersion, config.researchSchemaVersion, tzOffset, deviceType, sensorSource,
+      provenance.firmwareVersion || null, confidence, JSON.stringify(missing), JSON.stringify(flags),
+      shareDemographics ? ageRange(user.birth_year, nowS) : null,
+      shareDemographics ? (user.sex || null) : null,
+      shareDemographics ? heightBand(user.height_cm) : null,
+      shareDemographics ? (user.years_rowing ?? null) : null,
+      shareDemographics ? (user.competition_level || null) : null,
+      shareDemographics ? (user.club_type || null) : null,
+      shareDemographics ? (user.training_environment || null) : null,
+      shareDemographics ? (user.country || null) : null,
+      nowS);
   }
-  return { contributed: tags.length > 0, studies: tags };
+  return { contributed: tags.length > 0, studies: tags, confidence, missing, qualityFlags: flags };
 }
 
 export function contributeWellness(user, checkin) {
