@@ -134,4 +134,32 @@ test('unverified/invalid tokens are refused', async () => {
   assert.equal(msg.code, 'unauthenticated');
 });
 
+test('cookie-authenticated upgrades from a foreign Origin are rejected (CSWSH)', async () => {
+  // Browsers attach cookies to cross-origin WS upgrades and CORS does not
+  // apply — the server must therefore verify Origin itself for cookie auth.
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`, {
+    headers: { Cookie: `rp_session=${encodeURIComponent(outsider.token)}`, Origin: 'https://evil.example' },
+  });
+  const closed = await new Promise((resolve) => {
+    ws.on('close', (code) => resolve({ code }));
+    ws.on('message', () => resolve({ code: null })); // any message = not rejected
+  });
+  assert.equal(closed.code, 1008, 'cross-origin cookie upgrade closed with policy violation');
+
+  // Same cookie with the CORRECT origin still works.
+  const good = new WebSocket(`ws://127.0.0.1:${PORT}/ws`, {
+    headers: { Cookie: `rp_session=${encodeURIComponent(outsider.token)}`, Origin: `http://127.0.0.1:${PORT}` },
+  });
+  await new Promise((resolve, reject) => { good.on('open', resolve); good.on('close', () => reject(new Error('same-origin upgrade must not be rejected'))); });
+  good.close();
+});
+
+test('tokens invalidated by logout are refused on the WebSocket too', async () => {
+  const u = await makeUser('wslogout@rt.com');
+  await req('/auth/logout', { method: 'POST', token: u.token }); // bumps token_version
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws?token=${encodeURIComponent(u.token)}`);
+  const msg = await new Promise((resolve) => ws.on('message', d => resolve(JSON.parse(d.toString()))));
+  assert.equal(msg.code, 'unauthenticated', 'stale token_version rejected at the WS layer');
+});
+
 test.after(() => server.close());

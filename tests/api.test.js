@@ -1707,4 +1707,56 @@ test('observatory admin export is aggregate-only and owner-gated', async () => {
   assert.equal((await req('/admin/observatory/export', { token: rower.token })).status, 403, 'non-owner denied');
 });
 
+/* ---------------- production-hardening regression tests ---------------- */
+
+test('account deletion also removes longitudinal research snapshots', async () => {
+  const { db } = await import('../server/db.js');
+  const { researchId } = await import('../server/util.js');
+  const victim = await makeUser('snapshots@test.com');
+  const s = await req('/workouts/sync', { method: 'POST', body: workoutBody([125, 125, 125]), token: victim.token });
+  assert.equal(s.status, 201);
+  const rid = researchId(victim.user.id);
+  assert.ok(db.prepare('SELECT COUNT(*) c FROM research_snapshots WHERE research_id = ?').get(rid).c >= 1,
+    'contribution wrote a weekly snapshot');
+  await req('/users/me', { method: 'DELETE', body: { confirm: 'delete' }, token: victim.token });
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM research_snapshots WHERE research_id = ?').get(rid).c, 0,
+    'deletion removed every snapshot row');
+});
+
+test('verification codes lock per ACCOUNT after repeated wrong guesses (brute-force cap)', async () => {
+  resetRateLimits(); // isolate from the per-IP limiter — this tests the per-account cap
+  const email = 'bruteforce@test.com';
+  await req('/auth/signup', { method: 'POST', body: { email, password: 'password123', displayName: 'BF', accountType: 'rower' } });
+  for (let i = 0; i < 10; i++) {
+    const r = await req('/auth/verify', { method: 'POST', body: { email, code: String(100001 + i) } });
+    assert.equal(r.status, 400);
+    resetRateLimits(); // keep the IP limiter out of the way each round
+  }
+  const locked = await req('/auth/verify', { method: 'POST', body: { email, code: '123456' } });
+  assert.equal(locked.status, 429, 'account locks after 10 wrong codes even from fresh IPs');
+  resetRateLimits();
+});
+
+test('profile photo URLs are scheme-validated (https / data-image only)', async () => {
+  const evil = await req('/users/me', { method: 'PATCH', body: { photoUrl: 'javascript:alert(1)' }, token: rower2.token });
+  assert.equal(evil.body.user.photoUrl, null, 'javascript: rejected');
+  const http = await req('/users/me', { method: 'PATCH', body: { photoUrl: 'http://insecure.example/a.png' }, token: rower2.token });
+  assert.equal(http.body.user.photoUrl, null, 'plain http rejected');
+  const ok = await req('/users/me', { method: 'PATCH', body: { photoUrl: 'https://example.com/a.png' }, token: rower2.token });
+  assert.equal(ok.body.user.photoUrl, 'https://example.com/a.png');
+});
+
+test('workout timestamps from the future are clamped to a plausible window', async () => {
+  const body = workoutBody([120, 120, 120], { startedAt: Math.floor(Date.now() / 1000) + 999999 });
+  const s = await req('/workouts/sync', { method: 'POST', body, token: rower2.token });
+  assert.equal(s.status, 201);
+  const d = await req(`/workouts/${body.id}`, { token: rower2.token });
+  assert.ok(d.body.workout.started_at <= Math.floor(Date.now() / 1000) + 300, 'future start time clamped');
+});
+
+test('session tokens in URL query strings are NOT accepted on HTTP endpoints', async () => {
+  const r = await fetch(`${BASE}/api/workouts/?token=${encodeURIComponent(rower2.token)}`);
+  assert.equal(r.status, 401, 'query-param tokens must not authenticate HTTP requests');
+});
+
 test.after(() => { server.close(); });

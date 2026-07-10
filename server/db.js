@@ -20,6 +20,9 @@ const dbExistedAtBoot = fs.existsSync(config.dbFile);
 export const db = new DatabaseSync(config.dbFile);
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA foreign_keys = ON;');
+// Wait for a lock instead of throwing SQLITE_BUSY when a write collides with
+// the nightly VACUUM INTO backup or another writer's transaction.
+db.exec('PRAGMA busy_timeout = 5000;');
 
 db.exec(`
 /* ------------------------------ accounts ------------------------------ */
@@ -611,6 +614,7 @@ db.exec(`
 CREATE INDEX IF NOT EXISTS idx_auth_events_email ON auth_events(email, created_at);
 CREATE INDEX IF NOT EXISTS idx_connections_addressee ON connections(addressee_id, status);
 CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id);
 `);
 
 // Backfill for groups created before the expansion: creators become owners
@@ -758,6 +762,7 @@ CREATE TABLE IF NOT EXISTS research_snapshots (
   UNIQUE(research_id, study_tag, week_key)
 );
 CREATE INDEX IF NOT EXISTS idx_research_snapshots ON research_snapshots(study_tag, week_key);
+CREATE INDEX IF NOT EXISTS idx_research_snapshots_rid ON research_snapshots(research_id);
 `);
 
 /* -------------------- database identity & boot tracking --------------------

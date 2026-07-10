@@ -181,6 +181,15 @@ authRouter.post('/signup', rateLimit('signup', 20, 60 * 60 * 1000), (req, res) =
 authRouter.post('/verify', rateLimit('verify', 30, 60 * 60 * 1000), (req, res) => {
   requireFields(req.body || {}, ['email', 'code']);
   const email = String(req.body.email).trim().toLowerCase();
+  // Per-ACCOUNT guess cap on top of the per-IP limiter above: a 6-digit code
+  // is brute-forceable from many IPs, so the account itself locks after 10
+  // failed guesses in an hour (the athlete just requests a fresh code).
+  const recentFails = db.prepare(
+    "SELECT COUNT(*) c FROM auth_events WHERE kind = 'verify_fail' AND email = ? AND created_at >= ?")
+    .get(email, now() - 3600).c;
+  if (recentFails >= 10) {
+    throw new ApiError(429, 'Too many incorrect codes for this account — wait a while or request a new code.', 'rate_limited');
+  }
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (!user) {
     recordAuthEvent('verify_fail', { email, detail: 'unknown email' });
@@ -314,7 +323,8 @@ authRouter.post('/logout', authRequired, (req, res) => {
 async function verifyGoogleIdToken(idToken) {
   // Verify via Google's tokeninfo endpoint (simple + adequate for this scale;
   // swap for local JWKS verification under high volume).
-  const r = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`);
+  const r = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+    { signal: AbortSignal.timeout(10000) });
   if (!r.ok) throw new ApiError(401, 'Google token rejected.', 'oauth_failed');
   const info = await r.json();
   if (info.aud !== config.googleClientId) throw new ApiError(401, 'Google token audience mismatch.', 'oauth_failed');
@@ -367,7 +377,7 @@ authRouter.post('/oauth/google', async (req, res) => {
 let appleKeys = { keys: null, at: 0 };
 async function applePublicKeys() {
   if (appleKeys.keys && Date.now() - appleKeys.at < 6 * 3600 * 1000) return appleKeys.keys;
-  const r = await fetch('https://appleid.apple.com/auth/keys');
+  const r = await fetch('https://appleid.apple.com/auth/keys', { signal: AbortSignal.timeout(10000) });
   if (!r.ok) throw new ApiError(401, 'Could not reach Apple to verify the sign-in.', 'oauth_failed');
   appleKeys = { keys: (await r.json()).keys, at: Date.now() };
   return appleKeys.keys;

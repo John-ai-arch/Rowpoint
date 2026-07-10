@@ -64,6 +64,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export function createApp() {
   const app = express();
   app.disable('x-powered-by');
+  // Production runs behind exactly one reverse proxy (Render/Railway/nginx).
+  // Without this, req.ip is the proxy's address, so every visitor shares ONE
+  // rate-limit bucket — 20 failed logins from anyone would lock out login for
+  // the whole site. One trusted hop restores real client IPs.
+  app.set('trust proxy', 1);
   app.use(express.json({ limit: '4mb' }));
 
   // Security headers for the SPA. The CSP is tuned to exactly what RowPoint

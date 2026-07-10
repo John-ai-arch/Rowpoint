@@ -72,12 +72,31 @@ export function attachRealtime(httpServer) {
 
   wss.on('connection', (ws, req) => {
     const url = new URL(req.url, 'http://localhost');
-    // The browser sends the HttpOnly session cookie on the same-origin upgrade
-    // request; a ?token= query param is accepted as a fallback (grandfathered
-    // sessions and non-browser clients).
-    const token = url.searchParams.get('token') || parseCookies(req)[SESSION_COOKIE];
+    // Cross-site WebSocket hijacking guard: WS upgrades are not covered by
+    // CORS, and browsers attach cookies cross-origin — so when the request
+    // authenticates via the ambient session COOKIE, the Origin header must
+    // match this host. Explicit ?token= auth carries no ambient credential
+    // and is exempt (non-browser clients don't send Origin at all).
+    const queryToken = url.searchParams.get('token');
+    const cookieToken = parseCookies(req)[SESSION_COOKIE];
+    if (!queryToken && cookieToken && req.headers.origin) {
+      let originHost = null;
+      try { originHost = new URL(req.headers.origin).host; } catch { /* malformed origin */ }
+      if (originHost !== req.headers.host) {
+        ws.close(1008, 'cross-origin websocket rejected');
+        return;
+      }
+    }
+    const token = queryToken || cookieToken;
     const payload = verifyToken(token);
     const user = payload?.uid ? db.prepare('SELECT * FROM users WHERE id = ?').get(payload.uid) : null;
+    // Same session-invalidation rule as HTTP auth: a token minted before a
+    // logout / password reset carries an older token_version and is rejected.
+    if (user && (payload.tv ?? 0) !== (user.token_version ?? 0)) {
+      ws.send(JSON.stringify({ type: 'error', code: 'unauthenticated', message: 'Your session has expired — sign in again to use live sessions.' }));
+      ws.close();
+      return;
+    }
     if (!user || user.suspended || !user.email_verified) {
       ws.send(JSON.stringify({ type: 'error', code: 'unauthenticated', message: 'Sign in with a verified account to use live sessions.' }));
       ws.close();

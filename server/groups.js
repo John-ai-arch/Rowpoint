@@ -11,7 +11,7 @@ import { db } from './db.js';
 import { authRequired, verifiedRequired } from './middleware.js';
 import { publishToChannel } from './realtime.js';
 import { logger } from './log.js';
-import { uuid, now, badRequest, ApiError, safeJson, fmtSplit } from './util.js';
+import { uuid, now, badRequest, ApiError, safeJson, fmtSplit, safeImageUrl } from './util.js';
 
 const log = logger('groups');
 
@@ -659,7 +659,7 @@ groupsRouter.post('/', (req, res) => {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(gid, name, req.user.id, now(),
       String(b.description || '').slice(0, 500) || null,
-      String(b.photoUrl || '').slice(0, 500) || null,
+      safeImageUrl(b.photoUrl),
       b.privacy === 'public' ? 'public' : 'private',
       inviteCode(), b.hideMembers ? 1 : 0,
       strOrNull(b.school), strOrNull(b.club), strOrNull(b.city), strOrNull(b.region), strOrNull(b.country));
@@ -853,7 +853,7 @@ groupsRouter.patch('/:id', (req, res) => {
     .run(
       String(b.name ?? g.name).trim().slice(0, 80) || g.name,
       b.description !== undefined ? (String(b.description).slice(0, 500) || null) : g.description,
-      b.photoUrl !== undefined ? (String(b.photoUrl).slice(0, 500) || null) : g.photo_url,
+      b.photoUrl !== undefined ? safeImageUrl(b.photoUrl) : g.photo_url,
       b.privacy !== undefined ? (b.privacy === 'public' ? 'public' : 'private') : g.privacy,
       b.hideMembers !== undefined ? (b.hideMembers ? 1 : 0) : g.hide_members,
       b.school !== undefined ? strOrNull(b.school) : g.school,

@@ -9,11 +9,13 @@ import { parseCookies, SESSION_COOKIE } from './cookies.js';
 
 export function getUserFromRequest(req) {
   const header = req.headers.authorization || '';
-  // Auth sources, in order: Bearer header (API clients / tests), the HttpOnly
-  // session cookie (browser), then a ?token= query param (WebSocket fallback).
+  // Auth sources, in order: Bearer header (API clients / tests), then the
+  // HttpOnly session cookie (browser). Deliberately NOT a ?token= query param:
+  // tokens in URLs leak into access logs, browser history, and Referer
+  // headers. (The WebSocket upgrade path in realtime.js has its own handling.)
   const token = header.startsWith('Bearer ')
     ? header.slice(7)
-    : (parseCookies(req)[SESSION_COOKIE] || req.query?.token || null);
+    : (parseCookies(req)[SESSION_COOKIE] || null);
   const payload = verifyToken(token);
   if (!payload?.uid) return null;
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.uid);
@@ -37,7 +39,13 @@ export function authRequired(req, res, next) {
     throw new ApiError(403, 'Please verify your email address to use RowPoint.', 'email_unverified');
   }
   req.user = result.user;
-  db.prepare('UPDATE users SET last_active_at = ? WHERE id = ?').run(now(), result.user.id);
+  // Activity tracking is minute-granular for the admin DAU/WAU stats — one
+  // write per user per minute, not one per request (a dashboard load fires
+  // half a dozen API calls; writing on each would just churn the WAL).
+  const t = now();
+  if (!result.user.last_active_at || t - result.user.last_active_at >= 60) {
+    db.prepare('UPDATE users SET last_active_at = ? WHERE id = ?').run(t, result.user.id);
+  }
   next();
 }
 

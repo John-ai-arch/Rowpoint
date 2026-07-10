@@ -56,7 +56,13 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
   }
 
   const plan = b.plan ?? null;
-  const startedAt = Number(b.startedAt) || now() - Math.round(totalTime);
+  // Client clocks drift and offline queues replay late, but a start time in
+  // the future (or before the app could exist) corrupts streaks, weekly
+  // goals, and research timestamps — clamp to a plausible window instead.
+  const nowS = now();
+  const MIN_PLAUSIBLE = 1577836800; // 2020-01-01
+  let startedAt = Number(b.startedAt) || nowS - Math.round(totalTime);
+  if (startedAt > nowS + 300 || startedAt < MIN_PLAUSIBLE) startedAt = nowS - Math.round(totalTime);
 
   // Heart-rate time series (universal HR monitor subsystem): sanitized,
   // summarized into min/max/avg + zone seconds + drift using the rower's
@@ -94,7 +100,7 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
         hr_series_json, hr_zones_json, max_heart_rate, min_heart_rate, created_at
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(b.id, req.user.id, assignment?.id || null, assignedByCoachId, startedAt,
-        Number(b.endedAt) || startedAt + Math.round(totalTime),
+        clampNum(b.endedAt, startedAt, startedAt + 86400, null) ?? startedAt + Math.round(totalTime),
         b.machineType || 'rower', b.machineId || null, totalDistance, totalTime, avgSplit,
         // When a recorded HR series exists it is the single source of truth for
         // this workout's HR stats (avg/max/min all from the same samples);

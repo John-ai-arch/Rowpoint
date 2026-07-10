@@ -10,9 +10,22 @@ import { uuid, now } from './util.js';
 
 export const mailConfigured = () => !!config.resendApiKey;
 
+// The outbox exists for dev-mode inspection and delivery debugging. Bodies
+// contain verification / password-reset codes, so once a real provider is
+// configured only the metadata is kept (a DB dump must never be a pile of
+// valid login codes), and rows older than 7 days are pruned either way.
+let lastPrune = 0;
+function pruneOutbox() {
+  const t = now();
+  if (t - lastPrune < 3600) return;
+  lastPrune = t;
+  try { db.prepare('DELETE FROM email_outbox WHERE created_at < ?').run(t - 7 * 86400); } catch { /* best effort */ }
+}
+
 export function sendEmail(to, subject, body) {
+  pruneOutbox();
   db.prepare('INSERT INTO email_outbox (id, to_email, subject, body, created_at) VALUES (?,?,?,?,?)')
-    .run(uuid(), to, subject, body, now());
+    .run(uuid(), to, subject, mailConfigured() ? '(body not stored — delivered via provider)' : body, now());
 
   if (config.resendApiKey) {
     // Fire-and-forget: a mail-provider hiccup must never fail the signup

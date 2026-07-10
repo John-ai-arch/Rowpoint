@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { Router } from 'express';
-import { db, dbPersistenceInfo } from './db.js';
+import { db, dbPersistenceInfo, inTransaction } from './db.js';
 import { config } from './config.js';
 import { authRequired, adminRequired, audit, recordAuthEvent } from './middleware.js';
 import { metricsSnapshot } from './metrics.js';
@@ -51,8 +51,17 @@ adminRouter.get('/research/workouts', (req, res) => {
   const { studyTag, workoutType, from, to, format } = req.query;
   audit(req.user.id, 'research.workouts.query', null, { studyTag, workoutType, from, to, count: rows.length, export: format || 'json' });
   if (format === 'csv') {
+    // RFC-4180 escaping (several columns hold JSON with commas/quotes), plus a
+    // guard against spreadsheet formula injection: values here include
+    // free-form athlete profile strings, and this file is opened in Excel.
+    const cell = (v) => {
+      if (v === null || v === undefined) return '';
+      let s = String(v);
+      if (/^[=+\-@\t]/.test(s)) s = `'${s}`;
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
     const lines = [RESEARCH_WORKOUT_COLS.join(',')];
-    for (const r of rows) lines.push(RESEARCH_WORKOUT_COLS.map(c => r[c] ?? '').join(','));
+    for (const r of rows) lines.push(RESEARCH_WORKOUT_COLS.map(c => cell(r[c])).join(','));
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="research-workouts.csv"');
     return res.send(lines.join('\n'));
@@ -345,9 +354,12 @@ adminRouter.delete('/users/:id', (req, res) => {
   if (!u) throw new ApiError(404, 'User not found.', 'not_found');
   if (u.email === req.user.email) throw badRequest('You cannot delete your own admin account from here.');
   const rid = researchId(u.id);
-  db.prepare('DELETE FROM research_workouts WHERE research_id = ?').run(rid);
-  db.prepare('DELETE FROM research_wellness WHERE research_id = ?').run(rid);
-  db.prepare('DELETE FROM users WHERE id = ?').run(u.id);
+  inTransaction(() => {
+    db.prepare('DELETE FROM research_workouts WHERE research_id = ?').run(rid);
+    db.prepare('DELETE FROM research_wellness WHERE research_id = ?').run(rid);
+    db.prepare('DELETE FROM research_snapshots WHERE research_id = ?').run(rid);
+    db.prepare('DELETE FROM users WHERE id = ?').run(u.id);
+  });
   audit(req.user.id, 'user.delete', u.email, { requested: req.body?.reason || 'admin manual deletion' });
   res.json({ ok: true });
 });

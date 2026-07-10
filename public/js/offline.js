@@ -6,11 +6,39 @@ import { api, state, toast } from './api.js';
 
 const keyFor = (userId) => `rp_queue_${userId}`;
 
+/**
+ * Persist a completed workout to the local queue. localStorage has a hard
+ * quota (~5 MB), and a long workout's force curves + HR series can be large —
+ * a QuotaExceededError here would LOSE the workout at the worst possible
+ * moment. So on failure we degrade progressively: drop force curves (a
+ * diagnostic nicety), then the HR sample series (summaries survive
+ * server-side from splits), before ever giving up. Returns what was kept.
+ */
 export function queueWorkout(userId, payload) {
   const key = keyFor(userId);
-  const q = JSON.parse(localStorage.getItem(key) || '[]');
-  q.push({ payload, queuedAt: Date.now(), attempts: 0 });
-  localStorage.setItem(key, JSON.stringify(q));
+  let q;
+  try { q = JSON.parse(localStorage.getItem(key) || '[]'); } catch { q = []; }
+  const attempts = [
+    payload,
+    { ...payload, forceCurves: undefined },
+    { ...payload, forceCurves: undefined, hrSeries: undefined },
+  ];
+  for (let i = 0; i < attempts.length; i++) {
+    try {
+      localStorage.setItem(key, JSON.stringify([...q, { payload: attempts[i], queuedAt: Date.now(), attempts: 0 }]));
+      return { queued: true, trimmed: i > 0 };
+    } catch { /* quota — retry with a smaller payload */ }
+  }
+  // Still failing: storage is full of OTHER data. Drop the oldest queued
+  // items (they have had 20s-interval retries; the newest workout wins).
+  while (q.length) {
+    q.shift();
+    try {
+      localStorage.setItem(key, JSON.stringify([...q, { payload: attempts[2], queuedAt: Date.now(), attempts: 0 }]));
+      return { queued: true, trimmed: true, droppedOlder: true };
+    } catch { /* keep shrinking */ }
+  }
+  return { queued: false };
 }
 
 export function pendingCount(userId) {

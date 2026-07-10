@@ -1,11 +1,11 @@
 // Profile, settings (units / privacy / notifications / research toggle),
 // data export (§14), and full in-app account deletion (§10.1 / §14).
 import { Router } from 'express';
-import { db } from './db.js';
+import { db, inTransaction } from './db.js';
 import { config } from './config.js';
 import { authRequired } from './middleware.js';
 import { publicUser } from './auth.js';
-import { badRequest, clampInt, clampNum, uuid, now, researchId } from './util.js';
+import { badRequest, clampInt, clampNum, uuid, now, researchId, safeImageUrl } from './util.js';
 import { refreshSmartNotifications } from './smartNotifications.js';
 
 export const usersRouter = Router();
@@ -18,7 +18,7 @@ usersRouter.patch('/me', (req, res) => {
   const u = req.user;
   const updates = {
     display_name: b.displayName !== undefined ? String(b.displayName).slice(0, 80) : u.display_name,
-    photo_url: b.photoUrl !== undefined ? (b.photoUrl ? String(b.photoUrl).slice(0, 500) : null) : u.photo_url,
+    photo_url: b.photoUrl !== undefined ? safeImageUrl(b.photoUrl) : u.photo_url,
     birth_year: b.birthYear !== undefined ? clampInt(b.birthYear, 1900, 2100) : u.birth_year,
     weight_kg: b.weightKg !== undefined ? clampNum(b.weightKg, 20, 300) : u.weight_kg,
     weight_class: b.weightClass !== undefined ? (b.weightClass || null) : u.weight_class,
@@ -130,9 +130,14 @@ usersRouter.delete('/me', (req, res) => {
     throw badRequest('Send {"confirm":"delete"} to permanently delete your account.', 'confirm_required');
   }
   const rid = researchId(req.user.id);
-  db.prepare('DELETE FROM research_workouts WHERE research_id = ?').run(rid);
-  db.prepare('DELETE FROM research_wellness WHERE research_id = ?').run(rid);
-  // Teams owned by a deleted coach cascade; memberships cascade via FK.
-  db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
+  // One atomic unit: every pseudonymous research row (workouts, wellness, AND
+  // longitudinal snapshots) plus the account itself. Teams owned by a deleted
+  // coach cascade; memberships cascade via FK.
+  inTransaction(() => {
+    db.prepare('DELETE FROM research_workouts WHERE research_id = ?').run(rid);
+    db.prepare('DELETE FROM research_wellness WHERE research_id = ?').run(rid);
+    db.prepare('DELETE FROM research_snapshots WHERE research_id = ?').run(rid);
+    db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
+  });
   res.json({ ok: true, message: 'Your account and all associated data have been deleted.' });
 });

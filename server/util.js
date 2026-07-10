@@ -127,6 +127,19 @@ export function safeJson(s, fallback = null) {
   try { return JSON.parse(s); } catch { return fallback; }
 }
 
+/**
+ * Validate a user-supplied image URL: only https resources or inline data
+ * images, capped in length. Anything else (javascript:, file:, http:, vbscript:,
+ * protocol-relative tricks) is rejected to null — these strings end up in
+ * <img src> attributes across the app.
+ */
+export function safeImageUrl(v, maxLen = 500) {
+  const s = String(v || '').trim();
+  if (!s || s.length > maxLen) return null;
+  if (/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(s)) return s;
+  try { return new URL(s).protocol === 'https:' ? s : null; } catch { return null; }
+}
+
 /* ---------------- formatting ---------------- */
 
 export function fmtSplit(seconds) {
