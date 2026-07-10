@@ -1,6 +1,9 @@
-// Workout detail: splits table + chart, per-stroke force curves (§6), and the
-// stored AI pacing feedback (§11.4) with its explainable classification.
+// Workout detail: splits table + chart, per-stroke force curves (§6), the
+// stored AI pacing feedback (§11.4) with its explainable classification, and
+// the physics engine's analysis (energy, stroke rhythm, recovery kinetics,
+// performance decomposition — loaded lazily, never blocking the page).
 import { api, state, esc, fmtSplit, fmtDistance, fmtDuration, fmtDateTime } from '../api.js';
+import { t } from '../i18n.js';
 import { drawSplitBars, drawForceCurve, drawHrSeries } from '../components/charts.js';
 import { describePlanText } from './builder.js';
 import { zoneBounds, effectiveMaxHr, ZONE_COLORS, ZONE_NAMES } from '../ble/sensors.js';
@@ -72,6 +75,8 @@ export async function renderWorkoutDetail(el, id) {
       <canvas class="chart" id="forceChart"></canvas>
       <p class="muted small" id="strokeLabel"></p>
     </div>` : ''}
+
+    <div class="card" id="physicsCard"><h3>${esc(t('physics.title'))}</h3><p class="muted small">${esc(t('common.loading'))}</p></div>
   `;
 
   if (splits.length) drawSplitBars(el.querySelector('#splitChart'), splits);
@@ -98,4 +103,35 @@ export async function renderWorkoutDetail(el, id) {
     slider.addEventListener('input', show);
     show();
   }
+
+  renderPhysics(el.querySelector('#physicsCard'), id);
+}
+
+/** Physics-engine analysis card (lazy — a physics failure never hurts the page). */
+async function renderPhysics(card, workoutId) {
+  if (!card) return;
+  let p;
+  try { ({ ...p } = await api(`/physics/workout/${workoutId}`)); }
+  catch { card.remove(); return; }
+
+  const e = p.energy;
+  const d = p.decomposition;
+  const rhythm = p.stroke?.rhythmRatio;
+  const badge = (prov) => `<span class="badge ${prov === 'measured' ? 'green' : prov === 'estimated' ? 'blue' : 'amber'}">${esc(t(`twin.provenance.${prov}`) || prov)}</span>`;
+
+  card.innerHTML = `
+    <h3>${esc(t('physics.title'))}</h3>
+    ${e ? `<div class="grid cols3">
+      <div class="stat-tile"><div class="n">${Math.round(e.calories.value)}</div><div class="l">${esc(t('physics.calories'))} ±${Math.round(e.calories.uncertainty)}</div></div>
+      <div class="stat-tile"><div class="n">${Math.round(e.mechanicalWorkKj.value)}</div><div class="l">${esc(t('physics.workKj'))}</div></div>
+      <div class="stat-tile"><div class="n">${Math.round(e.systems.aerobic.value * 100)}%</div><div class="l">${esc(t('physics.aerobicShare'))}</div></div>
+    </div>
+    <p class="muted small">${esc(t('physics.energyNote'))} ${badge(e.grossEfficiency.provenance)}</p>` : ''}
+    ${rhythm ? `<p class="small">${esc(t('physics.rhythm'))}: <strong>${rhythm.value.toFixed(1)} : 1</strong>
+      ${p.stroke.driveTimeS ? ` · ${esc(t('physics.driveTime'))}: <strong>${p.stroke.driveTimeS.value.toFixed(2)}s</strong>` : ''}
+      ${badge(rhythm.provenance)} <span class="muted small">(${esc(p.stroke.source)})</span></p>` : ''}
+    ${p.recovery ? `<p class="small">${esc(t('physics.recovery'))}: <strong>~${Math.round(p.recovery.hoursToRecover)}h</strong>
+      <span class="muted">· ${esc(t('physics.residual24'))}: ${Math.round(p.recovery.residualIn24h.overall)}/100</span></p>` : ''}
+    ${d?.available ? `<p class="small" style="margin-bottom:0"><strong>${esc(t('physics.why'))}</strong> ${esc(d.explanation)}</p>` : ''}
+    <p class="muted small" style="margin-bottom:0">${esc(t('physics.disclaimer'))}</p>`;
 }

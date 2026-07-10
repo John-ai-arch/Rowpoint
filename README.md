@@ -163,6 +163,12 @@ server/twin/       Digital Twin engine: latent athlete-state model (12
                    categories), 12-stage inference pipeline (validate → clean →
                    extract → infer → update → predict → snapshot), feature-
                    extractor plugins, own-data /api/twin
+server/physics/    Computational Rowing Physics Engine: CP/W′ fitting from the
+                   athlete's best-effort curve, six-phase stroke decomposition,
+                   environment (air density/wind/current/water temp), hull-drag
+                   boat model, energy accounting, multi-system recovery
+                   kinetics, explainable erg↔boat translation, performance
+                   decomposition; feeds the twin via kernel provider contracts
 server/ai/         training analysis engine · LLM coach (+ analysis-engine
                    fallback) · pacing classifier · plan validation
 server/groups.js   group dashboards, leaderboards, challenges, goals, chat,

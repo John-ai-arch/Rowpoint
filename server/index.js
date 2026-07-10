@@ -59,6 +59,7 @@ import { csrfProtection } from './cookies.js';
 import { scheduleBackups } from './backup.js';
 import { attachRealtime } from './realtime.js';
 import { initTwinEngine, twinRouter } from './twin/index.js';
+import { initPhysicsEngine, physicsRouter } from './physics/index.js';
 import { startJobScheduler } from './kernel/jobs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -135,6 +136,7 @@ export function createApp() {
   app.use('/api/stroke', strokeRouter);
   app.use('/api/ai', aiRouter);
   app.use('/api/twin', twinRouter);
+  app.use('/api/physics', physicsRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/research-admin', researchAdminRouter);
 
@@ -182,7 +184,10 @@ export function startServer(port = config.port) {
   scheduleBackups();
   // Computational platform: engine event subscriptions + the background job
   // scheduler (ROWPOINT_JOBS_ENABLED=0 lets tests drive jobs deterministically).
+  // Init order is irrelevant by design — engines only meet through kernel
+  // contracts resolved at run time.
   initTwinEngine();
+  initPhysicsEngine();
   startJobScheduler();
   return new Promise((resolve) => {
     server.listen(port, () => {

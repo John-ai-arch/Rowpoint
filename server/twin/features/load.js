@@ -5,7 +5,10 @@ import { wattsFromSplit } from './power.js';
 
 export const loadExtractor = {
   name: 'load',
-  version: '1.0',
+  // 1.1: training_load moved to the TSS-like scale (hours × IF² × 100, so
+  // 100 ≈ one hour at 2k-relative intensity 1.0). The version bump makes the
+  // feature cache recompute exactly this extractor's features everywhere.
+  version: '1.1',
   features: ['duration_min', 'distance_m', 'intensity_factor', 'training_load', 'work_kj'],
   extract({ workout, best2kSeconds, maxHr }) {
     const timeS = Number(workout.total_time_s);
@@ -29,7 +32,8 @@ export const loadExtractor = {
       duration_min: minutes,
       distance_m: dist > 0 ? dist : null,
       intensity_factor: intensity,
-      training_load: intensity !== null ? minutes * intensity ** 2 * 100 : null,
+      // TSS-like: 100 = one hour at intensity factor 1.0 (2k-pace-relative).
+      training_load: intensity !== null ? (minutes / 60) * intensity ** 2 * 100 : null,
       work_kj: watts !== null ? (watts * timeS) / 1000 : null,
     };
   },

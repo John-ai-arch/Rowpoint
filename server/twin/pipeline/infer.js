@@ -1,10 +1,15 @@
 // Stage 6 — physiological inference. Assembles the model context (full
 // training analysis + recent cached features) and runs every registered
-// inference model. One model failing records its error and the others still
-// run — models are independent by design.
+// inference model — the twin's own plus any engine providing the
+// 'twin.inference-model' contract (e.g. the physics engine's CP/W′ fit).
+// Duplicate proposals for the same variable are merged by inverse-variance
+// combination: independent model opinions weight by their certainty.
+// One model failing records its error and the others still run.
 import { db } from '../../db.js';
 import { buildTrainingAnalysis, classifyWorkoutZone } from '../../ai/trainingAnalysis.js';
 import { effectiveMaxHr } from '../../hr.js';
+import { combine } from '../../kernel/estimate.js';
+import { providersOf } from '../../kernel/providers.js';
 import { INFERENCE_MODELS } from '../inference.js';
 
 export const inferStage = {
@@ -37,16 +42,18 @@ export const inferStage = {
     const modelCtx = { user: ctx.user, analysis: ctx.analysis, recentWorkouts: ctx.recentWorkouts, nowS: ctx.nowS };
     const updates = {};
     const modelErrors = [];
-    for (const model of INFERENCE_MODELS) {
+    const models = [...INFERENCE_MODELS, ...providersOf('twin.inference-model')];
+    for (const model of models) {
       try {
         const out = model.infer(modelCtx);
         for (const [variable, estimate] of Object.entries(out)) {
           if (!estimate) continue;
           if (!updates[model.category]) updates[model.category] = {};
-          updates[model.category][variable] = estimate;
+          const existing = updates[model.category][variable];
+          updates[model.category][variable] = existing ? combine(existing, estimate) : estimate;
         }
       } catch (e) {
-        modelErrors.push({ model: model.modelVersion, error: e.message });
+        modelErrors.push({ model: model.modelVersion || model.name, error: e.message });
       }
     }
     ctx.updates = updates;

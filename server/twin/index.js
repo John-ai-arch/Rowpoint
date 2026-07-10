@@ -8,7 +8,9 @@ import { db } from '../db.js';
 import { logger } from '../log.js';
 import { on } from '../kernel/events.js';
 import { defineJob, enqueue } from '../kernel/jobs.js';
+import { provide } from '../kernel/providers.js';
 import { runTwinPipeline, rebuildTwin } from './pipeline/index.js';
+import { getState } from './store.js';
 export { twinRouter } from './api.js';
 
 const log = logger('twin');
@@ -23,6 +25,10 @@ let initialized = false;
 export function initTwinEngine() {
   if (initialized) return;
   initialized = true;
+
+  // Other engines read athlete state through this contract — never by
+  // importing twin code or touching twin tables directly.
+  provide('twin.state-access', { name: 'twin', getState });
 
   // Incremental update — the standard reaction to a completed workout.
   // Coalesces per user: a burst of offline-synced workouts runs the pipeline

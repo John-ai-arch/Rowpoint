@@ -87,6 +87,15 @@ export async function renderTwin(el) {
           ${Object.entries(data.state[cat]).map(([name, est]) => varRow(cat, name, est)).join('')}
         </div>`).join('')}
     </div>
+    <div class="card" id="boatCard">
+      <div class="row between" style="flex-wrap:wrap;gap:8px">
+        <h3 style="margin:0">${esc(t('physics.boatTitle'))}</h3>
+        <select id="boatClass" style="max-width:120px">
+          ${['1x', '2x', '2-', '4x', '4-', '4+', '8+'].map(b => `<option value="${b}">${b}</option>`).join('')}
+        </select>
+      </div>
+      <div id="boatResult" class="mt muted small">${esc(t('common.loading'))}</div>
+    </div>
     <p class="muted small mt">${esc(t('twin.disclaimer'))}</p>`;
 
   el.querySelector('#rebuildBtn').onclick = async () => {
@@ -100,6 +109,26 @@ export async function renderTwin(el) {
     const [cat, name] = btn.dataset.var.split(':');
     openVariable(cat, name, data.state[cat]?.[name]);
   });
+
+  // On-water projection (physics engine): explainable chain, honest range.
+  const boatSelect = el.querySelector('#boatClass');
+  const boatResult = el.querySelector('#boatResult');
+  const loadBoat = async () => {
+    boatResult.innerHTML = esc(t('common.loading'));
+    try {
+      const { translation: tr } = await api(`/physics/translation?boatClass=${encodeURIComponent(boatSelect.value)}`);
+      if (!tr.available) { boatResult.innerHTML = esc(tr.reason); return; }
+      boatResult.innerHTML = `
+        <div style="font-size:1.4rem;font-weight:700;color:var(--text,inherit)">${esc(tr.predictedTime)} <span class="muted small">/ ${tr.raceDistanceM}m · ${esc(tr.range)}</span></div>
+        <details class="mt"><summary class="small">${esc(t('physics.chain'))}</summary>
+          ${tr.chain.map(c => `<div class="small" style="margin:4px 0">→ ${esc(c.detail)}</div>`).join('')}
+          <div class="muted small mt">${tr.assumptions.map(a => `• ${esc(a)}`).join('<br>')}</div>
+        </details>
+        <p class="muted small" style="margin-bottom:0">${esc(tr.disclaimer)}</p>`;
+    } catch (e) { boatResult.innerHTML = esc(e.message); }
+  };
+  boatSelect.onchange = loadBoat;
+  loadBoat();
 }
 
 async function openVariable(cat, name, est) {
