@@ -60,6 +60,7 @@ import { scheduleBackups } from './backup.js';
 import { attachRealtime } from './realtime.js';
 import { initTwinEngine, twinRouter } from './twin/index.js';
 import { initPhysicsEngine, physicsRouter } from './physics/index.js';
+import { initOptimizerEngine, optimizerRouter } from './optimizer/index.js';
 import { startJobScheduler } from './kernel/jobs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -137,6 +138,7 @@ export function createApp() {
   app.use('/api/ai', aiRouter);
   app.use('/api/twin', twinRouter);
   app.use('/api/physics', physicsRouter);
+  app.use('/api/optimizer', optimizerRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/research-admin', researchAdminRouter);
 
@@ -188,6 +190,7 @@ export function startServer(port = config.port) {
   // contracts resolved at run time.
   initTwinEngine();
   initPhysicsEngine();
+  initOptimizerEngine();
   startJobScheduler();
   return new Promise((resolve) => {
     server.listen(port, () => {

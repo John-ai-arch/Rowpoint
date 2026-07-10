@@ -89,6 +89,20 @@ export function variableHistory(userId, category, variable, limit = 60) {
   }).filter(Boolean);
 }
 
+/**
+ * Chronic weekly training load (TSS-like) from the cached load features:
+ * the 28-day sum divided by 4. Exposed to other engines through the
+ * 'twin.state-access' provider contract.
+ */
+export function getChronicWeeklyLoad(userId, nowS = now()) {
+  const row = db.prepare(
+    `SELECT SUM(f.value) AS total FROM feature_cache f
+     JOIN workouts w ON w.id = f.workout_id
+     WHERE w.user_id = ? AND w.started_at >= ? AND f.feature = 'training_load'`)
+    .get(userId, nowS - 28 * 86400);
+  return row?.total ? Math.round((row.total / 4) * 10) / 10 : null;
+}
+
 /** Record one pipeline stage's outcome — the explainability trail. */
 export function recordInference(userId, workoutId, stage, detail, modelVersion = null) {
   db.prepare('INSERT INTO inference_history (id, user_id, workout_id, stage, detail_json, model_version, created_at) VALUES (?,?,?,?,?,?,?)')

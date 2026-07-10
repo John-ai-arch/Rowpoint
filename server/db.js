@@ -880,6 +880,29 @@ CREATE TABLE IF NOT EXISTS research_state_snapshots (
   UNIQUE(research_id, week_key)
 );
 CREATE INDEX IF NOT EXISTS idx_research_state ON research_state_snapshots(week_key);
+
+/* Optimization runs: full reproducibility record for every optimizer
+   execution — config, seed, algorithm, component versions, the entire
+   Pareto frontier, Monte Carlo distributions, and sensitivity analysis.
+   A future paper (or a curious athlete) can replay any recommendation. */
+CREATE TABLE IF NOT EXISTS optimization_runs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'user' CHECK (kind IN ('user','replan','benchmark')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','completed','failed')),
+  config_json TEXT NOT NULL,
+  seed INTEGER,
+  algorithm TEXT,
+  versions_json TEXT,
+  frontier_json TEXT,
+  sensitivity_json TEXT,
+  benchmark_json TEXT,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  duration_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_optimization_runs ON optimization_runs(user_id, created_at);
 `);
 
 // Twin pipeline: a completed workout marks the same-day cached suggestion
@@ -917,7 +940,7 @@ metaSet('last_boot_at', Math.floor(Date.now() / 1000));
    gate for any *destructive* future migration (which must branch on the stored
    version rather than run unconditionally). Bump it whenever the schema
    changes. */
-const SCHEMA_VERSION = 9; // 9: computational platform (kernel + digital twin)
+const SCHEMA_VERSION = 10; // 9: kernel + digital twin · 10: optimization runs
 const priorSchema = Number(metaGet('schema_version') || 0);
 if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
 export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };

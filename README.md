@@ -169,6 +169,12 @@ server/physics/    Computational Rowing Physics Engine: CP/W′ fitting from the
                    boat model, energy accounting, multi-system recovery
                    kinetics, explainable erg↔boat translation, performance
                    decomposition; feeds the twin via kernel provider contracts
+server/optimizer/  Global Training Optimization Engine: plan-space search
+                   (genetic/anneal/beam, benchmarked), hard-constraint gate +
+                   repair, fitness–fatigue forward simulation, multi-objective
+                   Pareto frontiers with tradeoff explanations, seeded Monte
+                   Carlo on worker threads, sensitivity + counterfactuals,
+                   full reproducibility records (optimization_runs)
 server/ai/         training analysis engine · LLM coach (+ analysis-engine
                    fallback) · pacing classifier · plan validation
 server/groups.js   group dashboards, leaderboards, challenges, goals, chat,
