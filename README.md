@@ -155,10 +155,18 @@ native apps ship.
 server/            Express API, SQLite schema, auth (RBAC), teams, workouts,
                    wellness, social, groups, research pipeline, admin, metrics,
                    WebSocket hub
+server/kernel/     computational kernel: event bus, SQLite-backed job system
+                   (worker-thread offload), versioned model registry, Estimate
+                   type (value+confidence+provenance), dependency graph,
+                   seeded RNG, shared statistics
+server/twin/       Digital Twin engine: latent athlete-state model (12
+                   categories), 12-stage inference pipeline (validate → clean →
+                   extract → infer → update → predict → snapshot), feature-
+                   extractor plugins, own-data /api/twin
 server/ai/         training analysis engine · LLM coach (+ analysis-engine
                    fallback) · pacing classifier · plan validation
 server/groups.js   group dashboards, leaderboards, challenges, goals, chat,
                    achievements, discovery, analytics + workout-sync hooks
 public/            SPA (no build step): pages, BLE adapters, charts, offline queue
-tests/             unit + API + realtime (node:test), e2e/ (Playwright)
+tests/             unit + API + realtime + kernel + twin (node:test), e2e/ (Playwright)
 ```

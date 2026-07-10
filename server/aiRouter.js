@@ -42,22 +42,42 @@ aiRouter.get('/suggestion', limitAiRefresh, async (req, res) => {
   const date = todayStr();
   const refresh = req.query.refresh === '1';
   let row = db.prepare('SELECT * FROM ai_suggestions WHERE user_id = ? AND date = ?').get(req.user.id, date);
-  if (row && !refresh) {
+
+  // Twin-pipeline staleness: a workout completed after today's suggestion was
+  // cached marks it stale. Engine-sourced suggestions regenerate transparently
+  // (free, deterministic); LLM-sourced ones stay cached — refreshing those
+  // remains the explicit, rate-limited ?refresh=1 action so background state
+  // changes can never generate model cost. Coach-touched suggestions
+  // (approved/overridden) are never regenerated here.
+  const staleEngine = row && row.stale === 1 && row.status === 'delivered' && row.source !== 'llm';
+
+  if (row && !refresh && !staleEngine) {
+    return res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user) });
+  }
+  if (row && (refresh || staleEngine) && row.status !== 'delivered') {
+    // A coach approved or overrode today's plan — that always wins.
     return res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user) });
   }
 
   const analysis = buildTrainingAnalysis(req.user);
   const rec = await generateRecommendation(analysis);
 
-  if (row) db.prepare('DELETE FROM ai_suggestions WHERE id = ?').run(row.id);
-  const id = uuid();
-  db.prepare(`INSERT INTO ai_suggestions
-      (id, user_id, date, structured_json, rationale_tag, text, status, source, confidence, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, req.user.id, date, JSON.stringify(rec), rec.category, rec.explanation,
-      'delivered', rec.source, rec.confidence, now());
+  if (row) {
+    // Regenerate IN PLACE so adherence tracking (followed) survives the refresh.
+    db.prepare(`UPDATE ai_suggestions SET structured_json = ?, rationale_tag = ?, text = ?,
+        source = ?, confidence = ?, stale = 0, created_at = ? WHERE id = ?`)
+      .run(JSON.stringify(rec), rec.category, rec.explanation, rec.source, rec.confidence, now(), row.id);
+    row = db.prepare('SELECT * FROM ai_suggestions WHERE id = ?').get(row.id);
+  } else {
+    const id = uuid();
+    db.prepare(`INSERT INTO ai_suggestions
+        (id, user_id, date, structured_json, rationale_tag, text, status, source, confidence, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(id, req.user.id, date, JSON.stringify(rec), rec.category, rec.explanation,
+        'delivered', rec.source, rec.confidence, now());
+    row = db.prepare('SELECT * FROM ai_suggestions WHERE id = ?').get(id);
+  }
   log.info(`Recommendation for user ${req.user.id}: ${rec.category} (source=${rec.source}, confidence=${rec.confidence})`);
-  row = db.prepare('SELECT * FROM ai_suggestions WHERE id = ?').get(id);
   res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user) });
 });
 

@@ -13,6 +13,7 @@ import { onWorkoutSynced } from './groups.js';
 import { contributeWorkout } from './research.js';
 import { validatePlan } from './ai/planValidation.js';
 import { sanitizeHrSeries, hrSummary, effectiveMaxHr } from './hr.js';
+import { emit } from './kernel/events.js';
 
 export const workoutsRouter = Router();
 workoutsRouter.use(authRequired);
@@ -201,6 +202,14 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
     firmwareVersion: b.client?.firmwareVersion,
   };
   const research = contributeWorkout(req.user, savedWorkout, normSplits, provenance);
+
+  /* ---- computational platform (event-driven, decoupled) ----
+     Everything downstream of a saved workout that does NOT feed this HTTP
+     response reacts via the event bus: the Digital Twin pipeline runs as a
+     coalesced background job, and future subscribers attach here without
+     touching this file. The groups hook above stays a direct call because
+     its badge results are returned in the response body. */
+  emit('workout.saved', { userId: req.user.id, workoutId: b.id, newPb });
 
   res.status(201).json({
     ok: true, workoutId: b.id, aiFeedback, newPb, newBadges,

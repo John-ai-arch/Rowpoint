@@ -765,6 +765,129 @@ CREATE INDEX IF NOT EXISTS idx_research_snapshots ON research_snapshots(study_ta
 CREATE INDEX IF NOT EXISTS idx_research_snapshots_rid ON research_snapshots(research_id);
 `);
 
+/* -------------------- computational platform (kernel + digital twin) --------------------
+   Storage for the computational kernel (event log, background jobs, versioned
+   model registry) and the Digital Twin engine (current athlete state, append-
+   only snapshots, inference audit trail, feature cache, prediction history,
+   anonymized weekly research state aggregates). Design notes:
+   - athlete_state holds the CURRENT latent state as (category, variable) rows
+     so new variables/categories are purely additive — no schema change needed
+     when a future model adds one.
+   - state_snapshots / inference_history are append-only: they exist so any
+     historical state or recommendation can be explained and reproduced.
+   - feature_cache is keyed by (workout, feature) and carries the extractor
+     version — a version bump invalidates exactly the features it changes. */
+db.exec(`
+CREATE TABLE IF NOT EXISTS event_log (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  payload_json TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_event_log ON event_log(type, created_at);
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  user_id TEXT,
+  payload_json TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','completed','failed','cancelled')),
+  priority INTEGER NOT NULL DEFAULT 5,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  max_attempts INTEGER NOT NULL DEFAULT 3,
+  run_at INTEGER NOT NULL,
+  checkpoint_json TEXT,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  finished_at INTEGER,
+  duration_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_due ON jobs(status, run_at, priority);
+CREATE INDEX IF NOT EXISTS idx_jobs_user ON jobs(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS model_versions (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  version TEXT NOT NULL,
+  description TEXT,
+  first_seen_at INTEGER NOT NULL,
+  UNIQUE(name, version)
+);
+
+CREATE TABLE IF NOT EXISTS athlete_state (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  category TEXT NOT NULL,
+  variable TEXT NOT NULL,
+  value REAL,
+  uncertainty REAL,
+  confidence REAL,
+  provenance TEXT,
+  model_version TEXT,
+  evidence_count INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, category, variable)
+);
+
+CREATE TABLE IF NOT EXISTS state_snapshots (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  trigger TEXT,
+  state_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_state_snapshots ON state_snapshots(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS inference_history (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workout_id TEXT,
+  stage TEXT NOT NULL,
+  detail_json TEXT,
+  model_version TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_inference_history ON inference_history(user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS feature_cache (
+  workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+  feature TEXT NOT NULL,
+  version TEXT NOT NULL,
+  value REAL,
+  computed_at INTEGER NOT NULL,
+  PRIMARY KEY (workout_id, feature)
+);
+
+CREATE TABLE IF NOT EXISTS predictions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  model_version TEXT,
+  confidence REAL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_predictions ON predictions(user_id, kind, created_at);
+
+CREATE TABLE IF NOT EXISTS research_state_snapshots (
+  id TEXT PRIMARY KEY,
+  research_id TEXT NOT NULL,
+  week_key TEXT NOT NULL,
+  state_json TEXT NOT NULL,
+  model_version TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE(research_id, week_key)
+);
+CREATE INDEX IF NOT EXISTS idx_research_state ON research_state_snapshots(week_key);
+`);
+
+// Twin pipeline: a completed workout marks the same-day cached suggestion
+// stale; the read path regenerates engine-sourced suggestions in place
+// (LLM-sourced ones stay cached — refreshing those stays an explicit,
+// rate-limited user action so twin updates can never run up model cost).
+ensureColumn('ai_suggestions', 'stale', 'stale INTEGER NOT NULL DEFAULT 0');
+
 /* -------------------- database identity & boot tracking --------------------
    One row of instance metadata lets the app (and the admin System tab) prove
    whether storage is actually persistent: the instance id and created_at
@@ -794,7 +917,7 @@ metaSet('last_boot_at', Math.floor(Date.now() / 1000));
    gate for any *destructive* future migration (which must branch on the stored
    version rather than run unconditionally). Bump it whenever the schema
    changes. */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9; // 9: computational platform (kernel + digital twin)
 const priorSchema = Number(metaGet('schema_version') || 0);
 if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
 export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };

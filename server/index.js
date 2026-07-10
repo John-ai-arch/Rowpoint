@@ -58,6 +58,8 @@ import { researchAdminRouter } from './researchAdmin.js';
 import { csrfProtection } from './cookies.js';
 import { scheduleBackups } from './backup.js';
 import { attachRealtime } from './realtime.js';
+import { initTwinEngine, twinRouter } from './twin/index.js';
+import { startJobScheduler } from './kernel/jobs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -132,6 +134,7 @@ export function createApp() {
   app.use('/api/observatory', observatoryRouter);
   app.use('/api/stroke', strokeRouter);
   app.use('/api/ai', aiRouter);
+  app.use('/api/twin', twinRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/research-admin', researchAdminRouter);
 
@@ -177,6 +180,10 @@ export function startServer(port = config.port) {
   const server = http.createServer(app);
   attachRealtime(server);
   scheduleBackups();
+  // Computational platform: engine event subscriptions + the background job
+  // scheduler (ROWPOINT_JOBS_ENABLED=0 lets tests drive jobs deterministically).
+  initTwinEngine();
+  startJobScheduler();
   return new Promise((resolve) => {
     server.listen(port, () => {
       console.log(`RowPoint listening on http://localhost:${server.address().port}`);
