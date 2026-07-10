@@ -175,6 +175,13 @@ server/optimizer/  Global Training Optimization Engine: plan-space search
                    Pareto frontiers with tradeoff explanations, seeded Monte
                    Carlo on worker threads, sensitivity + counterfactuals,
                    full reproducibility records (optimization_runs)
+server/experiments/ Experimental Design & Validation Engine: hypothesis
+                   registry (model assumptions as Bayesian-updated objects),
+                   versioned knowledge graph, consent-gated safety-bounded
+                   experiment protocols with automatic stopping conditions,
+                   honest small-n outcome evaluation, prediction-vs-outcome
+                   meta-learning (calibration scorecards, promotion rule),
+                   append-only lab notebook
 server/discovery/  Scientific Discovery Engine (research-admin only):
                    versioned longitudinal feature store over pseudonymized
                    research data, automated hypothesis screens (correlations,

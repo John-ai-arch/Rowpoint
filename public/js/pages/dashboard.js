@@ -23,6 +23,7 @@ export async function renderDashboard(el) {
 
   const checkin = wellnessRes.status === 'fulfilled' ? wellnessRes.value.checkin : null;
   const suggestion = aiRes.status === 'fulfilled' ? aiRes.value.suggestion : null;
+  const advisorNotes = aiRes.status === 'fulfilled' ? aiRes.value.advisorNotes : null;
   const teams = teamsRes.status === 'fulfilled' ? teamsRes.value : { coached: [], joined: [] };
   const recent = workoutsRes.status === 'fulfilled' ? workoutsRes.value.workouts : [];
   const daily = dailyRes.status === 'fulfilled' ? dailyRes.value.suggestions : [];
@@ -42,6 +43,14 @@ export async function renderDashboard(el) {
     ${prog && prog.totals.workouts ? heroHtml(prog, u) : ''}
 
     ${suggestion ? renderCoachCard(suggestion) : ''}
+
+    ${(advisorNotes || []).filter(n => n.kind === 'experiment').map(n => `
+    <div class="card" style="border-left:3px solid var(--accent,#3d9be9)">
+      <div class="row between"><h3 style="margin:0">🧪 ${esc(n.title || t('dash.experimentTitle'))}</h3>
+        <span class="badge blue">${esc(t('dash.experimentBadge'))}</span></div>
+      <p class="small" style="margin:6px 0">${esc(n.note)}</p>
+      <p class="muted small" style="margin:0">${esc(t('dash.experimentOptional'))}</p>
+    </div>`).join('')}
 
     ${!checkin ? `
     <div class="card ai-card" id="wellnessNudge">

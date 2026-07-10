@@ -74,6 +74,22 @@ export function renderSettings(el) {
     <button class="secondary" id="rf_save">Save research profile</button>
   </div>
 
+  <div class="card" id="experimentsCard">
+    <h3>${esc(t('settings.experiments'))}</h3>
+    <p class="muted small">${esc(t('settings.experimentsBlurb'))}</p>
+    <label class="field"><span>${esc(t('settings.experimentsStatus'))}</span>
+      <select id="expConsent">
+        <option value="none">${esc(t('settings.expNone'))}</option>
+        <option value="active">${esc(t('settings.expActive'))}</option>
+        <option value="paused">${esc(t('settings.expPaused'))}</option>
+      </select></label>
+    <div id="expCurrent" class="small"></div>
+    <div class="row mt" style="gap:8px;flex-wrap:wrap">
+      <button class="secondary sm" id="expPropose" style="display:none">${esc(t('settings.expPropose'))}</button>
+      <button class="ghost sm" id="expDeleteData">${esc(t('settings.expDelete'))}</button>
+    </div>
+  </div>
+
   <div class="card">
     <h3>${esc(t('settings.notifications'))}</h3>
     <p class="muted small">Each category is separate — no blanket switch.</p>
@@ -171,6 +187,63 @@ export function renderSettings(el) {
     { researchShareDemographics: chk('researchShareDemographics') },
     'Demographics preference saved.',
   );
+
+  /* ---- experiments consent + lifecycle (separate consent from research) ---- */
+  const wireExperiments = async () => {
+    const consentSel = el.querySelector('#expConsent');
+    const current = el.querySelector('#expCurrent');
+    const proposeBtn = el.querySelector('#expPropose');
+    try {
+      const [{ status }, { experiments }] = await Promise.all([
+        api('/experiments/consent'), api('/experiments/mine'),
+      ]);
+      consentSel.value = status;
+      proposeBtn.style.display = status === 'active' ? '' : 'none';
+      const active = experiments.find(x => x.status === 'active' || x.status === 'proposed');
+      if (active) {
+        const p = active.protocol;
+        current.innerHTML = `<div class="notice mt">
+          <strong>${esc(p.title || active.template)}</strong> <span class="badge blue">${esc(active.status)}</span>
+          <p class="small" style="margin:6px 0">${esc(p.objective || '')}</p>
+          ${active.status === 'proposed' ? `<p class="muted small">${esc(p.safetyNote || '')}</p>
+            <div class="row" style="gap:6px"><button class="secondary sm" data-exp="accept">${esc(t('settings.expAccept'))}</button>
+            <button class="ghost sm" data-exp="decline">${esc(t('settings.expDecline'))}</button></div>`
+    : `<button class="ghost sm" data-exp="stop">${esc(t('settings.expStop'))}</button>`}
+        </div>`;
+        current.querySelectorAll('[data-exp]').forEach(b => b.onclick = async () => {
+          try { await api(`/experiments/${active.id}/${b.dataset.exp}`, { method: 'POST' }); toast('Done.', 'success'); wireExperiments(); }
+          catch (e) { toast(e.message, 'error'); }
+        });
+      } else {
+        const last = experiments[0];
+        current.innerHTML = last?.outcome
+          ? `<p class="muted small mt">${esc(t('settings.expLastOutcome'))}: ${esc(last.outcome.conclusion)}${last.outcome.measure ? ` — ${esc(last.outcome.measure)}` : ''}</p>`
+          : '';
+      }
+    } catch { current.textContent = ''; }
+    consentSel.onchange = async () => {
+      try {
+        await api('/experiments/consent', { method: 'POST', body: { status: consentSel.value } });
+        toast(t('settings.expSaved'), 'success');
+        wireExperiments();
+      } catch (e) { toast(e.message, 'error'); }
+    };
+    proposeBtn.onclick = async () => {
+      try {
+        const r = await api('/experiments/propose', { method: 'POST' });
+        toast(r.proposed ? t('settings.expProposed') : (r.reason || ''), r.proposed ? 'success' : 'info');
+        wireExperiments();
+      } catch (e) { toast(e.message, 'error'); }
+    };
+    el.querySelector('#expDeleteData').onclick = async () => {
+      try {
+        const r = await api('/experiments/contributions', { method: 'DELETE' });
+        toast(`${t('settings.expDeleted')} (${r.deleted})`, 'success');
+        wireExperiments();
+      } catch (e) { toast(e.message, 'error'); }
+    };
+  };
+  wireExperiments();
   for (const cat of ['workout_reminder', 'wellness_reminder', 'team_activity', 'group_activity', 'announcement']) {
     el.querySelector(`#np_${cat}`).onchange = () => patch({
       notifPrefs: {

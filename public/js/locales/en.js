@@ -604,3 +604,28 @@ export const en = {
     disclaimer: 'Optimization over a fitness–fatigue model of your training data. Plans are decision support for you and your coach — not medical guidance.',
   },
 };
+
+/* Experiments engine strings — merged into the existing namespaces (adding a
+   second `settings:`/`dash:` literal key would silently clobber the first). */
+Object.assign(en.dash, {
+  experimentTitle: 'Active experiment',
+  experimentBadge: 'optional · you chose this',
+  experimentOptional: 'Part of an experiment you joined. Skip it any time — stopping never affects anything else.',
+});
+Object.assign(en.settings, {
+  experiments: 'Training experiments',
+  experimentsBlurb: 'Optional, separate from research: short protocols that rearrange training you already do to answer a scientific question (e.g. 60s vs 120s interval rest). Bounded by your own training history, with automatic safety stops. Pause or leave any time.',
+  experimentsStatus: 'Participation',
+  expNone: 'Not participating',
+  expActive: 'Participating',
+  expPaused: 'Paused',
+  expPropose: 'Suggest an experiment for me',
+  expDelete: 'Delete my experiment data',
+  expAccept: 'Accept & start',
+  expDecline: 'Decline',
+  expStop: 'Stop this experiment',
+  expSaved: 'Experiment preference saved.',
+  expProposed: 'Experiment proposed — review it below.',
+  expDeleted: 'Experiment records deleted',
+  expLastOutcome: 'Last experiment outcome',
+});

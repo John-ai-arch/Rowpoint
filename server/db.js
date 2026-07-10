@@ -961,7 +961,104 @@ CREATE TABLE IF NOT EXISTS research_exclusions (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_research_exclusions ON research_exclusions(analysis_id);
+
+/* -------- Autonomous Experimental Design & Validation Engine --------
+   - hypotheses: every model assumption as a first-class, Bayesian-updated
+     object (Beta-Bernoulli confidence; full validation history).
+   - knowledge_nodes/edges: the versioned knowledge graph — models,
+     assumptions, variables, findings, and their evidenced relationships.
+   - experiments: consented, safety-bounded protocols for individual
+     athletes; participation is opt-in, pausable, and stoppable at any time.
+   - lab_notebook: append-only scientific record of every hypothesis
+     update, experiment event, and model transition. Exportable.
+   - model_performance / model_transitions: meta-learning — how good are
+     the models themselves, and every promotion/retirement with reasons. */
+CREATE TABLE IF NOT EXISTS hypotheses (
+  id TEXT PRIMARY KEY,
+  statement TEXT NOT NULL,
+  origin_model TEXT NOT NULL,
+  alpha REAL NOT NULL DEFAULT 1,
+  beta REAL NOT NULL DEFAULT 1,
+  confidence REAL NOT NULL,
+  prior_confidence REAL NOT NULL,
+  populations TEXT NOT NULL DEFAULT 'general',
+  validation_history_json TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_nodes (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  label TEXT NOT NULL,
+  meta_json TEXT,
+  created_at INTEGER NOT NULL,
+  UNIQUE(kind, label)
+);
+
+CREATE TABLE IF NOT EXISTS knowledge_edges (
+  id TEXT PRIMARY KEY,
+  from_node TEXT NOT NULL REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+  to_node TEXT NOT NULL REFERENCES knowledge_nodes(id) ON DELETE CASCADE,
+  relation TEXT NOT NULL,
+  confidence REAL,
+  evidence_source TEXT,
+  model_version TEXT,
+  last_validated_at INTEGER,
+  created_at INTEGER NOT NULL,
+  UNIQUE(from_node, to_node, relation)
+);
+
+CREATE TABLE IF NOT EXISTS experiments (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  hypothesis_id TEXT REFERENCES hypotheses(id) ON DELETE SET NULL,
+  template TEXT NOT NULL,
+  protocol_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed','active','completed','stopped','declined')),
+  started_at INTEGER,
+  ends_at INTEGER,
+  outcome_json TEXT,
+  stop_reason TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_experiments_user ON experiments(user_id, status);
+
+CREATE TABLE IF NOT EXISTS lab_notebook (
+  id TEXT PRIMARY KEY,
+  entry_kind TEXT NOT NULL,
+  ref_id TEXT,
+  body_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lab_notebook ON lab_notebook(entry_kind, created_at);
+
+CREATE TABLE IF NOT EXISTS model_performance (
+  id TEXT PRIMARY KEY,
+  model_name TEXT NOT NULL,
+  version TEXT NOT NULL,
+  metric TEXT NOT NULL,
+  value REAL NOT NULL,
+  detail_json TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_model_performance ON model_performance(model_name, metric, created_at);
+
+CREATE TABLE IF NOT EXISTS model_transitions (
+  id TEXT PRIMARY KEY,
+  model_name TEXT NOT NULL,
+  from_version TEXT,
+  to_version TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  metrics_json TEXT,
+  created_at INTEGER NOT NULL
+);
 `);
+
+// Experiment participation is a SEPARATE explicit consent on top of the
+// research toggle: none (never asked/declined), active, or paused.
+ensureColumn('users', 'experiment_consent', "experiment_consent TEXT NOT NULL DEFAULT 'none'");
+ensureColumn('users', 'experiment_consent_at', 'experiment_consent_at INTEGER');
 
 // Twin pipeline: a completed workout marks the same-day cached suggestion
 // stale; the read path regenerates engine-sourced suggestions in place
@@ -998,7 +1095,7 @@ metaSet('last_boot_at', Math.floor(Date.now() / 1000));
    gate for any *destructive* future migration (which must branch on the stored
    version rather than run unconditionally). Bump it whenever the schema
    changes. */
-const SCHEMA_VERSION = 11; // 9: kernel + twin · 10: optimization runs · 11: discovery engine
+const SCHEMA_VERSION = 12; // 9: kernel+twin · 10: optimizer · 11: discovery · 12: experiments
 const priorSchema = Number(metaGet('schema_version') || 0);
 if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
 export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };

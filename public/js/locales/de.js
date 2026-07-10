@@ -605,3 +605,28 @@ export const de = {
     disclaimer: 'Optimierung über ein Fitness-Ermüdungs-Modell deiner Trainingsdaten. Pläne sind Entscheidungshilfe für dich und deinen Coach — keine medizinische Beratung.',
   },
 };
+
+/* Experimente-Strings — in bestehende Namespaces gemergt (ein zweiter
+   settings:/dash:-Schlüssel würde den ersten stillschweigend überschreiben). */
+Object.assign(de.dash, {
+  experimentTitle: 'Aktives Experiment',
+  experimentBadge: 'optional · deine Wahl',
+  experimentOptional: 'Teil eines Experiments, dem du beigetreten bist. Jederzeit überspringen — ein Abbruch hat keinerlei Folgen.',
+});
+Object.assign(de.settings, {
+  experiments: 'Trainingsexperimente',
+  experimentsBlurb: 'Optional und getrennt von der Forschung: kurze Protokolle, die dein bestehendes Training umordnen, um eine wissenschaftliche Frage zu beantworten (z. B. 60s vs. 120s Intervallpause). Begrenzt durch deine eigene Trainingshistorie, mit automatischen Sicherheitsstopps. Jederzeit pausieren oder aussteigen.',
+  experimentsStatus: 'Teilnahme',
+  expNone: 'Keine Teilnahme',
+  expActive: 'Ich nehme teil',
+  expPaused: 'Pausiert',
+  expPropose: 'Experiment für mich vorschlagen',
+  expDelete: 'Meine Experimentdaten löschen',
+  expAccept: 'Annehmen & starten',
+  expDecline: 'Ablehnen',
+  expStop: 'Experiment beenden',
+  expSaved: 'Experiment-Einstellung gespeichert.',
+  expProposed: 'Experiment vorgeschlagen — unten ansehen.',
+  expDeleted: 'Experimentdaten gelöscht',
+  expLastOutcome: 'Letztes Experiment-Ergebnis',
+});

@@ -102,6 +102,15 @@ function draw(el, p, quality, dist, corr, trends) {
       <div id="discFindings" class="mt"></div>
     </div>
 
+    <div class="card" id="validationCard"><h3>Model validation & knowledge</h3>
+      <p class="muted small">Meta-learning: how well the platform's own models predict reality. Prediction scorecards fill as athletes complete real 2k tests; hypothesis confidences move only with evidence (Bayesian, fully recorded in the lab notebook).</p>
+      <div id="valBody" class="small">Loading…</div>
+      <div class="row mt" style="gap:8px;flex-wrap:wrap">
+        <button class="ghost sm" id="valNotebook">Export lab notebook</button>
+        <button class="ghost sm" id="valGraph">Export knowledge graph</button>
+      </div>
+    </div>
+
     <div class="card"><h3>Export dataset</h3>
       <p class="muted small">Anonymized CSV (Excel-compatible) or JSON, with a reproducibility manifest + data dictionary. Exports revealing fewer than ${p.minCohort} participants are refused. Every export is audited.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap">
@@ -143,6 +152,7 @@ function draw(el, p, quality, dist, corr, trends) {
   };
 
   wireDiscovery(el);
+  wireValidation(el);
 
   requestAnimationFrame(() => {
     if (!dist.suppressed) for (const k of ['weeklyMeters', 'acuteChronicWorkloadRatio', 'trainingMonotony', 'consistencyScore']) {
@@ -151,6 +161,42 @@ function draw(el, p, quality, dist, corr, trends) {
     const tc = el.querySelector('#trendCanvas');
     if (tc && trends.points.length) drawTrend(tc, [{ label: 'median weekly m', color: '#38bdf8', points: trends.points.map((pt, i) => ({ x: i, y: pt.median })) }]);
   });
+}
+
+/* ---- Model validation panel (experiments engine) ---- */
+
+async function wireValidation(el) {
+  const body = el.querySelector('#valBody');
+  if (!body) return;
+  try {
+    const { scorecards, hypotheses, graph, experiments, transitions } = await api('/research-admin/validation/overview');
+    const bar = (c) => `<span style="display:inline-block;width:70px;height:7px;border-radius:4px;background:rgba(127,127,127,.25);vertical-align:middle">
+      <span style="display:block;width:${Math.round(c * 100)}%;height:7px;border-radius:4px;background:${c >= 0.6 ? 'var(--good,#2f9e63)' : c >= 0.45 ? '#e0a63c' : 'var(--bad,#d5453c)'}"></span></span>`;
+    body.innerHTML = `
+      <div class="grid cols3">
+        <div class="stat-tile tight"><div class="n">${graph.totalNodes}</div><div class="l">knowledge nodes</div></div>
+        <div class="stat-tile tight"><div class="n">${graph.totalEdges}</div><div class="l">evidenced edges</div></div>
+        <div class="stat-tile tight"><div class="n">${(experiments.completed || 0)}/${(experiments.completed || 0) + (experiments.active || 0) + (experiments.stopped || 0) || 0}</div><div class="l">experiments completed</div></div>
+      </div>
+      <strong class="small">Prediction scorecards</strong>
+      ${scorecards.length ? `<table class="small"><thead><tr><th>model</th><th>outcomes</th><th>mean |err|</th><th>bias</th><th>interval hits</th><th>stated conf.</th></tr></thead>
+        <tbody>${scorecards.map(c => `<tr><td>${esc(c.model)}@${esc(c.version)}</td><td>${c.outcomes}</td><td>${c.meanAbsErrorS ?? '–'}s</td><td>${c.meanBiasS ?? '–'}s</td><td>${c.intervalHitRate ?? '–'}</td><td>${c.statedConfidence ?? '–'}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="muted">No prediction outcomes yet — scorecards fill as athletes complete real 2k tests against standing predictions.</p>'}
+      <strong class="small">Hypothesis registry</strong> <span class="muted">(prior → current confidence; moves only with evidence)</span>
+      ${hypotheses.map(h => `<div class="row" style="gap:8px;margin:4px 0;align-items:center" title="${esc(h.statement)}">
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.statement)}</span>
+        ${bar(h.confidence)} <span style="width:88px;text-align:right">${h.priorConfidence} → <strong>${h.confidence}</strong></span>
+        <span class="muted" style="width:40px;text-align:right">${h.observations} obs</span></div>`).join('')}
+      ${transitions.length ? `<strong class="small">Model transitions</strong>${transitions.map(tr => `<div class="muted">${esc(tr.model_name)}: ${esc(tr.from_version || '?')} → ${esc(tr.to_version)} — ${esc(tr.reason)}</div>`).join('')}` : ''}`;
+  } catch (e) { body.textContent = e.message; }
+
+  const download = async (path, name) => {
+    const r = await api(path, { raw: true });
+    const blob = await r.blob();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href);
+  };
+  el.querySelector('#valNotebook').onclick = () => download('/research-admin/validation/notebook', 'rowpoint-lab-notebook.json');
+  el.querySelector('#valGraph').onclick = () => download('/research-admin/validation/graph', 'rowpoint-knowledge-graph.json');
 }
 
 /* ---- Scientific Discovery Engine panel ---- */

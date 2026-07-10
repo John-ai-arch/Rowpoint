@@ -62,6 +62,7 @@ import { initTwinEngine, twinRouter } from './twin/index.js';
 import { initPhysicsEngine, physicsRouter } from './physics/index.js';
 import { initOptimizerEngine, optimizerRouter } from './optimizer/index.js';
 import { initDiscoveryEngine, discoveryRouter } from './discovery/index.js';
+import { initExperimentsEngine, experimentsRouter, validationRouter } from './experiments/index.js';
 import { startJobScheduler } from './kernel/jobs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -141,7 +142,9 @@ export function createApp() {
   app.use('/api/physics', physicsRouter);
   app.use('/api/optimizer', optimizerRouter);
   app.use('/api/admin', adminRouter);
+  app.use('/api/experiments', experimentsRouter);
   app.use('/api/research-admin/discovery', discoveryRouter);
+  app.use('/api/research-admin/validation', validationRouter);
   app.use('/api/research-admin', researchAdminRouter);
 
   app.get('/api/status', (req, res) => res.json({ ok: true, name: 'RowPoint', ts: Date.now() }));
@@ -194,6 +197,7 @@ export function startServer(port = config.port) {
   initPhysicsEngine();
   initOptimizerEngine();
   initDiscoveryEngine();
+  initExperimentsEngine();
   startJobScheduler();
   return new Promise((resolve) => {
     server.listen(port, () => {

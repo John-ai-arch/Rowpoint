@@ -8,12 +8,17 @@ import { authRequired, researchAdminRequired, audit } from '../middleware.js';
 import { rateLimit } from '../ratelimit.js';
 import { ApiError, badRequest, safeJson, now } from '../util.js';
 import { enqueue } from '../kernel/jobs.js';
+import { emit, defineEvent } from '../kernel/events.js';
 import { discoveryStatus } from './analyses.js';
 import { cohortSummary, COHORT_FILTERS } from './cohorts.js';
 import { DISCOVERY_FEATURES, FEATURE_STORE_VERSION } from './featureStore.js';
 
 export const discoveryRouter = Router();
 discoveryRouter.use(authRequired, researchAdminRequired);
+
+// Reviewed findings are platform events: the experiments engine routes
+// approved ones into hypothesis-confidence updates (no direct coupling).
+defineEvent('research.finding-reviewed');
 
 /** Queue a discovery run (background job; heavy on big datasets). */
 discoveryRouter.post('/run', rateLimit('discovery_run', 6, 60 * 60 * 1000), (req, res) => {
@@ -56,11 +61,15 @@ discoveryRouter.post('/findings/:id/review', (req, res) => {
   const action = req.body?.action;
   if (!['approve', 'dismiss'].includes(action)) throw badRequest('action must be approve or dismiss.');
   const note = String(req.body?.note || '').slice(0, 1000) || null;
-  const row = db.prepare("SELECT id FROM research_findings WHERE id = ? AND status = 'pending'").get(req.params.id);
+  const row = db.prepare("SELECT * FROM research_findings WHERE id = ? AND status = 'pending'").get(req.params.id);
   if (!row) throw new ApiError(404, 'Pending finding not found.', 'not_found');
   db.prepare('UPDATE research_findings SET status = ?, reviewer_note = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?')
     .run(action === 'approve' ? 'approved' : 'dismissed', note, req.user.id, now(), row.id);
   audit(req.user.id, `research.discovery.finding.${action}`, row.id, { note: !!note });
+  const body = safeJson(row.body_json, {});
+  emit('research.finding-reviewed', {
+    action, kind: row.kind, title: row.title, effect: body?.stats?.effect ?? null,
+  });
   res.json({ ok: true });
 });
 

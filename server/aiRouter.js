@@ -13,6 +13,7 @@ import { generateRecommendation } from './ai/coach.js';
 import { logger } from './log.js';
 import { uuid, now, todayStr, safeJson, ApiError } from './util.js';
 import { percentileSnapshot } from './observatory.js';
+import { providersOf } from './kernel/providers.js';
 
 const log = logger('ai-router');
 
@@ -36,6 +37,20 @@ function popInsight(user) {
   } catch { return null; }
 }
 
+// Suggestion advisors (kernel provider contract): engines may attach clearly
+// labeled, optional context to the daily suggestion — e.g. the experiments
+// engine surfaces an active experiment's session for consenting athletes.
+function advisorNotes(user) {
+  const notes = [];
+  for (const advisor of providersOf('ai.suggestion-advisor')) {
+    try {
+      const note = advisor.advise(user);
+      if (note) notes.push(note);
+    } catch { /* advisors are optional — never break the suggestion */ }
+  }
+  return notes.length ? notes : null;
+}
+
 /* ---------------- today's recommendation ---------------- */
 
 aiRouter.get('/suggestion', limitAiRefresh, async (req, res) => {
@@ -52,11 +67,11 @@ aiRouter.get('/suggestion', limitAiRefresh, async (req, res) => {
   const staleEngine = row && row.stale === 1 && row.status === 'delivered' && row.source !== 'llm';
 
   if (row && !refresh && !staleEngine) {
-    return res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user) });
+    return res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user), advisorNotes: advisorNotes(req.user) });
   }
   if (row && (refresh || staleEngine) && row.status !== 'delivered') {
     // A coach approved or overrode today's plan — that always wins.
-    return res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user) });
+    return res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user), advisorNotes: advisorNotes(req.user) });
   }
 
   const analysis = buildTrainingAnalysis(req.user);
@@ -78,7 +93,7 @@ aiRouter.get('/suggestion', limitAiRefresh, async (req, res) => {
     row = db.prepare('SELECT * FROM ai_suggestions WHERE id = ?').get(id);
   }
   log.info(`Recommendation for user ${req.user.id}: ${rec.category} (source=${rec.source}, confidence=${rec.confidence})`);
-  res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user) });
+  res.json({ suggestion: presentSuggestion(row), populationInsight: popInsight(req.user), advisorNotes: advisorNotes(req.user) });
 });
 
 /* ---------------- the analysis itself (training balance UI) ---------------- */

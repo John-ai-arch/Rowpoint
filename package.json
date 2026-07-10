@@ -7,7 +7,7 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "node --no-warnings --test tests/unit.test.js tests/api.test.js tests/realtime.test.js tests/kernel.test.js tests/twin.test.js tests/physics.test.js tests/optimizer.test.js tests/discovery.test.js",
+    "test": "node --no-warnings --test tests/unit.test.js tests/api.test.js tests/realtime.test.js tests/kernel.test.js tests/twin.test.js tests/physics.test.js tests/optimizer.test.js tests/discovery.test.js tests/experiments.test.js",
     "start": "node server/index.js",
     "test:e2e": "playwright test",
     "backup": "node server/backup.js create",
