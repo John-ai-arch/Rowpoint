@@ -903,6 +903,64 @@ CREATE TABLE IF NOT EXISTS optimization_runs (
   duration_ms INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_optimization_runs ON optimization_runs(user_id, created_at);
+
+/* -------- Scientific Discovery Engine (research-admin only) --------
+   All keyed by the pseudonymous research_id — never an account id.
+   - research_features: the versioned longitudinal feature store (one row per
+     pseudonym per ISO week per feature), separate from operational tables.
+   - research_analyses: full reproducibility record per discovery run
+     (dataset snapshot id, config, seed, component versions, summary).
+   - research_findings: machine-generated hypotheses queued for HUMAN review;
+     nothing is ever auto-published. Approved/dismissed rows persist with
+     reviewer notes; stale pending rows are replaced by newer runs.
+   - research_exclusions: every record an analysis skipped, and why —
+     data is never silently discarded. */
+CREATE TABLE IF NOT EXISTS research_features (
+  research_id TEXT NOT NULL,
+  week_key TEXT NOT NULL,
+  feature TEXT NOT NULL,
+  version TEXT NOT NULL,
+  value REAL,
+  quality REAL,
+  computed_at INTEGER NOT NULL,
+  PRIMARY KEY (research_id, week_key, feature)
+);
+CREATE INDEX IF NOT EXISTS idx_research_features ON research_features(feature, week_key);
+
+CREATE TABLE IF NOT EXISTS research_analyses (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  dataset_snapshot TEXT NOT NULL,
+  config_json TEXT,
+  seed INTEGER,
+  versions_json TEXT,
+  results_json TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_analyses ON research_analyses(kind, created_at);
+
+CREATE TABLE IF NOT EXISTS research_findings (
+  id TEXT PRIMARY KEY,
+  analysis_id TEXT NOT NULL REFERENCES research_analyses(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','dismissed')),
+  reviewer_note TEXT,
+  reviewed_by TEXT,
+  reviewed_at INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_findings ON research_findings(status, created_at);
+
+CREATE TABLE IF NOT EXISTS research_exclusions (
+  id TEXT PRIMARY KEY,
+  analysis_id TEXT NOT NULL,
+  record_ref TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_exclusions ON research_exclusions(analysis_id);
 `);
 
 // Twin pipeline: a completed workout marks the same-day cached suggestion
@@ -940,7 +998,7 @@ metaSet('last_boot_at', Math.floor(Date.now() / 1000));
    gate for any *destructive* future migration (which must branch on the stored
    version rather than run unconditionally). Bump it whenever the schema
    changes. */
-const SCHEMA_VERSION = 10; // 9: kernel + digital twin · 10: optimization runs
+const SCHEMA_VERSION = 11; // 9: kernel + twin · 10: optimization runs · 11: discovery engine
 const priorSchema = Number(metaGet('schema_version') || 0);
 if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
 export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };

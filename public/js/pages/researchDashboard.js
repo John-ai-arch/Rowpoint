@@ -92,6 +92,16 @@ function draw(el, p, quality, dist, corr, trends) {
     ${trends.points.length ? `<div class="card"><h3>Weekly volume — dataset median over time</h3>
       <canvas id="trendCanvas"></canvas><p class="muted small">Weeks below the minimum cohort are omitted.</p></div>` : ''}
 
+    <div class="card" id="discoveryCard"><h3>Scientific Discovery Engine</h3>
+      <p class="muted small">Automated hypothesis screens over the longitudinal feature store: correlations, training archetypes, plateau analysis. Every candidate is exploratory, statistically gated (permutation p, bootstrap CI, BH correction), and waits here for your review — nothing auto-publishes.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="secondary sm" id="discRun">🔬 Run analysis</button>
+        <button class="ghost sm" id="discReport">Export approved findings</button>
+        <span class="small muted" id="discStatus"></span>
+      </div>
+      <div id="discFindings" class="mt"></div>
+    </div>
+
     <div class="card"><h3>Export dataset</h3>
       <p class="muted small">Anonymized CSV (Excel-compatible) or JSON, with a reproducibility manifest + data dictionary. Exports revealing fewer than ${p.minCohort} participants are refused. Every export is audited.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap">
@@ -132,6 +142,8 @@ function draw(el, p, quality, dist, corr, trends) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'rowpoint-data-dictionary.json'; a.click(); URL.revokeObjectURL(a.href);
   };
 
+  wireDiscovery(el);
+
   requestAnimationFrame(() => {
     if (!dist.suppressed) for (const k of ['weeklyMeters', 'acuteChronicWorkloadRatio', 'trainingMonotony', 'consistencyScore']) {
       const c = el.querySelector(`#dv_${k}`); if (c && dist.variables[k]?.histogram) drawDistribution(c, dist.variables[k].histogram, null, { fmt: (v) => Math.round(v) });
@@ -139,6 +151,82 @@ function draw(el, p, quality, dist, corr, trends) {
     const tc = el.querySelector('#trendCanvas');
     if (tc && trends.points.length) drawTrend(tc, [{ label: 'median weekly m', color: '#38bdf8', points: trends.points.map((pt, i) => ({ x: i, y: pt.median })) }]);
   });
+}
+
+/* ---- Scientific Discovery Engine panel ---- */
+
+async function wireDiscovery(el) {
+  const statusEl = el.querySelector('#discStatus');
+  const findingsEl = el.querySelector('#discFindings');
+  if (!statusEl) return;
+
+  const refresh = async () => {
+    try {
+      const [{ status }, { findings }] = await Promise.all([
+        api('/research-admin/discovery/status'),
+        api('/research-admin/discovery/findings?status=pending'),
+      ]);
+      statusEl.textContent = status.latest
+        ? `Last run ${fmtDate(status.latest.createdAt)} · snapshot ${status.latest.snapshot.slice(0, 18)}… · seed ${status.latest.seed} · ${status.featureStore.rows} feature rows / ${status.featureStore.athletes} athletes · queue: ${status.findings.pending} pending, ${status.findings.approved} approved`
+        : 'No analysis has run yet.';
+      findingsEl.innerHTML = findings.length ? findings.map(findingCard).join('')
+        : `<p class="muted small">${status.latest ? (status.latest.results?.skipped || 'No pending candidates — the queue is clear.') : ''}</p>`;
+      findingsEl.querySelectorAll('[data-review]').forEach(b => b.onclick = async () => {
+        const note = findingsEl.querySelector(`#note_${b.dataset.id}`)?.value || '';
+        try {
+          await api(`/research-admin/discovery/findings/${b.dataset.id}/review`, { method: 'POST', body: { action: b.dataset.review, note } });
+          refresh();
+        } catch (e) { statusEl.textContent = e.message; }
+      });
+    } catch (e) { statusEl.textContent = e.message; }
+  };
+
+  el.querySelector('#discRun').onclick = async () => {
+    try {
+      await api('/research-admin/discovery/run', { method: 'POST' });
+      statusEl.textContent = 'Analysis queued — results appear here shortly.';
+      setTimeout(refresh, 4000);
+      setTimeout(refresh, 10000);
+    } catch (e) { statusEl.textContent = e.message; }
+  };
+  el.querySelector('#discReport').onclick = async () => {
+    const r = await api('/research-admin/discovery/report', { raw: true });
+    const blob = await r.blob();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'rowpoint-research-findings.json'; a.click(); URL.revokeObjectURL(a.href);
+  };
+  refresh();
+}
+
+function findingCard(f) {
+  const b = f.body || {};
+  const s = b.stats || {};
+  const statLine = [
+    Number.isFinite(s.effect) ? `effect ${s.effect}` : null,
+    s.ci95 ? `CI [${s.ci95.lo}, ${s.ci95.hi}]` : null,
+    Number.isFinite(s.p) ? `p ${s.p}` : null,
+    Number.isFinite(s.pAdjusted) ? `p_adj ${s.pAdjusted}` : null,
+    s.n ? `n ${s.n}` : null,
+  ].filter(Boolean).join(' · ');
+  return `<div class="notice" style="margin:8px 0">
+    <div class="row between" style="flex-wrap:wrap;gap:4px">
+      <strong class="small">${esc(f.title)}</strong>
+      <span class="badge blue">${esc(b.evidence || 'exploratory')}</span>
+    </div>
+    <p class="small" style="margin:6px 0">${esc(b.narrative || '')}</p>
+    ${statLine ? `<div class="muted small">${esc(statLine)}</div>` : ''}
+    ${b.warnings?.length ? `<div class="small" style="color:var(--warn,#b8860b)">${b.warnings.map(w => `⚠ ${esc(w)}`).join('<br>')}</div>` : ''}
+    <details class="small mt"><summary class="muted">Confounders, limitations & follow-up</summary>
+      ${(b.confounders || []).map(c => `<div>• ${esc(c)}</div>`).join('')}
+      ${(b.limitations || []).map(c => `<div>• ${esc(c)}</div>`).join('')}
+      ${b.followUp ? `<div class="mt">→ ${esc(b.followUp)}</div>` : ''}
+      <div class="muted mt">Reproduce: snapshot ${esc(f.datasetSnapshot)} · seed ${f.seed}</div>
+    </details>
+    <div class="row mt" style="gap:6px;flex-wrap:wrap">
+      <input id="note_${esc(f.id)}" placeholder="Reviewer note (optional)" style="flex:1;min-width:160px">
+      <button class="secondary sm" data-review="approve" data-id="${esc(f.id)}">Approve</button>
+      <button class="ghost sm" data-review="dismiss" data-id="${esc(f.id)}">Dismiss</button>
+    </div>
+  </div>`;
 }
 
 function corrTable(corr) {

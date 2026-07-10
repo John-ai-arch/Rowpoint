@@ -175,6 +175,14 @@ server/optimizer/  Global Training Optimization Engine: plan-space search
                    Pareto frontiers with tradeoff explanations, seeded Monte
                    Carlo on worker threads, sensitivity + counterfactuals,
                    full reproducibility records (optimization_runs)
+server/discovery/  Scientific Discovery Engine (research-admin only):
+                   versioned longitudinal feature store over pseudonymized
+                   research data, automated hypothesis screens (correlations,
+                   archetype clustering, plateau analysis) behind a rigorous
+                   statistical gate (permutation p, bootstrap CI, BH
+                   correction, k-anonymity), recorded exclusions, dataset-
+                   snapshot-deterministic analyses, human review queue —
+                   nothing auto-publishes
 server/ai/         training analysis engine · LLM coach (+ analysis-engine
                    fallback) · pacing classifier · plan validation
 server/groups.js   group dashboards, leaderboards, challenges, goals, chat,
