@@ -1,6 +1,7 @@
 // Visual smoke pass over screens the main flow spec doesn't screenshot:
 // builder validation, live row screen mid-workout, social, group feed.
 import { test, expect } from '@playwright/test';
+import { englishState } from './state.js';
 
 const BASE = 'http://localhost:4381';
 test.describe.configure({ mode: 'serial' });
@@ -66,7 +67,7 @@ test('social + group: connect two users, group feed shows a completed workout', 
   const b = await makeUserApi(request, 'viz4@e2e.com', 'rower', { displayName: 'Wim' });
 
   // Vera searches Wim, sends request
-  const ctxA = await browser.newContext();
+  const ctxA = await browser.newContext({ storageState: englishState });
   const pA = await ctxA.newPage();
   await loginUI(pA, 'viz3@e2e.com');
   await pA.goto(`${BASE}/#/social`);
@@ -76,7 +77,7 @@ test('social + group: connect two users, group feed shows a completed workout', 
   await expect(pA.locator('.badge.amber', { hasText: 'request sent' })).toBeVisible();
 
   // Wim accepts in his own session
-  const ctxB = await browser.newContext();
+  const ctxB = await browser.newContext({ storageState: englishState });
   const pB = await ctxB.newPage();
   await loginUI(pB, 'viz4@e2e.com');
   await pB.goto(`${BASE}/#/social`);

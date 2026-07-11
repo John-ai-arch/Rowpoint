@@ -665,6 +665,8 @@ Object.assign(de.dash, {
   experimentOptional: 'Teil eines Experiments, dem du beigetreten bist. Jederzeit überspringen — ein Abbruch hat keinerlei Folgen.',
 });
 Object.assign(de.settings, {
+  privacyPolicy: 'Datenschutzerklärung',
+  termsOfService: 'Nutzungsbedingungen',
   experiments: 'Trainingsexperimente',
   experimentsBlurb: 'Optional und getrennt von der Forschung: kurze Protokolle, die dein bestehendes Training umordnen, um eine wissenschaftliche Frage zu beantworten (z. B. 60s vs. 120s Intervallpause). Begrenzt durch deine eigene Trainingshistorie, mit automatischen Sicherheitsstopps. Jederzeit pausieren oder aussteigen.',
   experimentsStatus: 'Teilnahme',

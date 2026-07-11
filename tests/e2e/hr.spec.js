@@ -2,6 +2,7 @@
 // screen, simulated monitor streaming, workout HR recording, summary + zones,
 // strict verification flow at login, and the PWA manifest.
 import { test, expect } from '@playwright/test';
+import { englishState } from './state.js';
 
 const BASE = 'http://localhost:4381';
 test.describe.configure({ mode: 'serial' });
@@ -30,7 +31,7 @@ test('unverified login routes to the verification screen — no session, no skip
   await request.post(`${BASE}/api/auth/signup`, {
     data: { email: 'strict@hr.com', password: 'password123', displayName: 'Strict', accountType: 'rower' },
   });
-  const page = await browser.newPage();
+  const page = await browser.newPage({ storageState: englishState });
   await page.goto(`${BASE}/#/login`);
   await page.fill('#email', 'strict@hr.com');
   await page.fill('#password', 'password123');
@@ -47,7 +48,7 @@ test('unverified login routes to the verification screen — no session, no skip
 
 test('Heart Rate Monitors is a primary nav section with full device management', async ({ browser, request }) => {
   await signupApi(request, 'pulse@hr.com');
-  ctx = await browser.newContext();
+  ctx = await browser.newContext({ storageState: englishState });
   const page = await ctx.newPage();
   await loginUI(page, 'pulse@hr.com');
 

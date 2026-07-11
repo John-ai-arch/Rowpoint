@@ -1,6 +1,7 @@
 // End-to-end browser tests: full coach + rower + admin journeys through the
 // real UI, using the built-in erg simulator (accelerated) for workouts.
 import { test, expect } from '@playwright/test';
+import { englishState } from './state.js';
 
 const BASE = 'http://localhost:4381';
 test.describe.configure({ mode: 'serial' });
@@ -39,7 +40,7 @@ let teamCode = '';
 let coachCtx, rowerCtx;
 
 test('coach signs up through the 3-step flow and gets a team code', async ({ browser, request }) => {
-  coachCtx = await browser.newContext();
+  coachCtx = await browser.newContext({ storageState: englishState });
   const page = await coachCtx.newPage();
   await signupUI(page, request, { email: 'coach@e2e.com', name: 'Coach Carla', type: 'coach' });
   await page.goto(`${BASE}/#/teams`);
@@ -50,7 +51,7 @@ test('coach signs up through the 3-step flow and gets a team code', async ({ bro
 });
 
 test('rower signs up with the team code and lands on the dashboard', async ({ browser, request }) => {
-  rowerCtx = await browser.newContext();
+  rowerCtx = await browser.newContext({ storageState: englishState });
   const page = await rowerCtx.newPage();
   await signupUI(page, request, { email: 'ann@e2e.com', name: 'Ann Rower', type: 'rower', teamCode });
   await page.goto(`${BASE}/#/teams`);
@@ -159,7 +160,9 @@ test('research toggle flips off in settings; CSV export works', async () => {
   await page.goto(`${BASE}/#/settings`);
   await expect(page.locator('#researchOptIn')).toBeChecked();
   await page.locator('#researchOptIn + .sl').click(); // visible switch face
-  await expect(page.getByText('Opted out')).toBeVisible();
+  // Target the toast specifically — the settings blurb also contains the
+  // words "opted out", which trips strict-mode locators.
+  await expect(page.locator('.toast', { hasText: 'Opted out' })).toBeVisible();
   const dl = page.waitForEvent('download');
   await page.click('#exportBtn');
   expect((await dl).suggestedFilename()).toBe('rowpoint-export.csv');
@@ -168,7 +171,7 @@ test('research toggle flips off in settings; CSV export works', async () => {
 });
 
 test('admin dashboard: owner email gets stats, others are blocked', async ({ browser, request }) => {
-  const ctx = await browser.newContext();
+  const ctx = await browser.newContext({ storageState: englishState });
   const page = await ctx.newPage();
   await signupUI(page, request, { email: 'lambert.venema2027@gmail.com', name: 'Lambert', type: 'coach' });
   await page.goto(`${BASE}/#/admin`);

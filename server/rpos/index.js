@@ -61,6 +61,11 @@ export function initRposEngine() {
   }
 
   startWatchdog();
-  // Audit retention runs opportunistically at boot (documented policy).
+  // Audit retention: at boot and then daily (a long-lived process must not
+  // grow computation_log unboundedly — the policy lives in pruneAuditTrail).
   try { pruneAuditTrail(); } catch { /* non-fatal */ }
+  const pruneTimer = setInterval(() => {
+    try { pruneAuditTrail(); } catch { /* non-fatal */ }
+  }, 24 * 3600 * 1000);
+  pruneTimer.unref();
 }

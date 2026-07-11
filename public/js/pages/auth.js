@@ -34,6 +34,10 @@ export async function renderAuth(el) {
     ? `${esc(t('auth.newHere'))} <a href="#" id="swap">${esc(t('auth.createAccount'))}</a>`
     : `${esc(t('auth.haveAccount'))} <a href="#" id="swap">${esc(t('auth.signIn'))}</a>`}
       </p>
+      <p class="center muted small">
+        <a href="/legal/privacy.html" target="_blank" rel="noopener">${esc(t('settings.privacyPolicy'))}</a>
+        · <a href="/legal/terms.html" target="_blank" rel="noopener">${esc(t('settings.termsOfService'))}</a>
+      </p>
     </div>`;
     wire();
   }

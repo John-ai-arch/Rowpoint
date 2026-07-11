@@ -664,6 +664,8 @@ Object.assign(en.dash, {
   experimentOptional: 'Part of an experiment you joined. Skip it any time — stopping never affects anything else.',
 });
 Object.assign(en.settings, {
+  privacyPolicy: 'Privacy Policy',
+  termsOfService: 'Terms of Service',
   experiments: 'Training experiments',
   experimentsBlurb: 'Optional, separate from research: short protocols that rearrange training you already do to answer a scientific question (e.g. 60s vs 120s interval rest). Bounded by your own training history, with automatic safety stops. Pause or leave any time.',
   experimentsStatus: 'Participation',

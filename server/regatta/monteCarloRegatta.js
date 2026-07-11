@@ -48,6 +48,12 @@ function sampleBoats(boats, strategy, customQuarters, rng) {
   });
 }
 
+/** Monte Carlo time step. Coarser than the engine's 250 ms default — inside
+ *  the design's 100–500 ms window — because bulk statistics over thousands
+ *  of races don't need sub-stroke resolution. The stored replay re-runs its
+ *  iteration with the SAME step, so it reproduces exactly. */
+export const MC_DT_S = 0.5;
+
 function runIteration(boats, envModel, config, i, { record = false } = {}) {
   const rng = createRng(seedFrom(config.seed, i));
   const env = sampleEnvironment(envModel, rng);
@@ -57,7 +63,7 @@ function runIteration(boats, envModel, config, i, { record = false } = {}) {
     sampled.forEach((b, idx) => { b.events = events[idx]; });
   }
   const race = simulateRace(sampled, env, {
-    distanceM: config.distanceM, rng, record, recordEveryS: config.recordEveryS ?? 1,
+    distanceM: config.distanceM, dtS: MC_DT_S, rng, record, recordEveryS: config.recordEveryS ?? 1,
   });
   return { race, env, sampled };
 }
@@ -170,6 +176,7 @@ export function runRegattaMC(config, onProgress = null) {
     summary: {
       version: MC_REGATTA_VERSION,
       iterations,
+      dtS: MC_DT_S,
       seed: config.seed,
       distanceM: config.distanceM,
       boatClass: boats[0]?.boatClass || '1x',

@@ -42,8 +42,24 @@ export function simulateRace(boats, env, { distanceM = 2000, dtS = 0.25, rng, re
   const maxT = D / 1.2; // hard stop: nothing rows slower than 1.2 m/s for a whole race
   const NOISE_TAU_S = 8; // execution noise varies over strokes, not steps
 
+  // Profiles are sampled once onto a uniform lookup table per boat — the
+  // stepper runs millions of times per Monte Carlo batch, so the per-step
+  // anchor scan is replaced by one table interpolation (identical to <0.1%).
+  const LUT_N = 256;
+  const profileLut = (profile) => {
+    const lut = new Float64Array(LUT_N + 1);
+    for (let i = 0; i <= LUT_N; i++) lut[i] = profileMultiplier(profile, i / LUT_N);
+    return lut;
+  };
+  const lutAt = (lut, f) => {
+    const p = Math.min(Math.max(f, 0), 1) * LUT_N;
+    const i = p | 0;
+    return i >= LUT_N ? lut[LUT_N] : lut[i] + (lut[i + 1] - lut[i]) * (p - i);
+  };
+
   const states = boats.map((b, i) => ({
     b,
+    lut: profileLut(b.profile),
     v: 0, x: 0,
     wbal: Math.max(b.wPrimeJ, 1),
     noise: 0,
@@ -68,7 +84,7 @@ export function simulateRace(boats, env, { distanceM = 2000, dtS = 0.25, rng, re
       const f = s.x / D;
 
       // --- target power: strategy × start × noise × events -------------
-      let mult = profileMultiplier(b.profile, f);
+      let mult = lutAt(s.lut, f);
       if (t < 15) mult *= 1 + 0.30 * (b.startQuality ?? 0.7) * Math.exp(-t / 4);
       if (rng && b.paceCv > 0) {
         s.noise += (-s.noise / NOISE_TAU_S) * dtS + b.paceCv * Math.sqrt((2 * dtS) / NOISE_TAU_S) * rng.gaussian(0, 1);

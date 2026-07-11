@@ -80,6 +80,12 @@ export function initRegattaEngine() {
             JSON.stringify(result.replay),
             now(), Date.now() - startedMs, run.id);
         emit('prediction.completed', { userId, kind: 'race-simulation', runId: run.id, winProb: result.summary.user.winProb });
+        // Storage cap: replays are ~100 KB each; keep the newest 30 runs per
+        // athlete (the reproducibility record of anything older has aged out
+        // of relevance — reproducing it means re-running with its seed).
+        db.prepare(`DELETE FROM race_simulations WHERE user_id = ? AND id NOT IN (
+          SELECT id FROM race_simulations WHERE user_id = ? ORDER BY created_at DESC LIMIT 30)`)
+          .run(userId, userId);
         log.info(`regatta ${run.id} for ${userId}: ${config.iterations} races, P(win)=${result.summary.user.winProb}`);
       } catch (e) {
         db.prepare("UPDATE race_simulations SET status = 'failed', error = ?, finished_at = ? WHERE id = ?")

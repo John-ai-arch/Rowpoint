@@ -123,7 +123,13 @@ export function renderSettings(el) {
     </div>
   </div>
 
-  <div class="center mb"><button class="ghost" id="logoutBtn">${esc(t('settings.signOut'))}</button></div>`;
+  <div class="center mb">
+    <button class="ghost" id="logoutBtn">${esc(t('settings.signOut'))}</button>
+    <p class="muted small mt">
+      <a href="/legal/privacy.html" target="_blank" rel="noopener">${esc(t('settings.privacyPolicy'))}</a>
+      · <a href="/legal/terms.html" target="_blank" rel="noopener">${esc(t('settings.termsOfService'))}</a>
+    </p>
+  </div>`;
 
   // Language switcher — persists + re-renders the whole app in the new locale.
   el.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => {

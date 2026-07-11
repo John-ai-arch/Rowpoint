@@ -2,3 +2,7 @@ node_modules/
 data/
 .env
 *.log
+# Playwright artifacts
+test-results/
+shots/
+playwright-report/

@@ -124,6 +124,12 @@ export function initOptimizerEngine() {
             sensitivity ? JSON.stringify(sensitivity) : null,
             now(), Date.now() - startedMs, run.id);
         emit('optimization.completed', { userId, runId: run.id, frontierSize: frontier.length, evaluations });
+        // Storage cap: frontier records are tens of KB each; keep the newest
+        // 30 runs per athlete (replans arrive on every synced workout, so an
+        // active season would otherwise grow this without bound).
+        db.prepare(`DELETE FROM optimization_runs WHERE user_id = ? AND id NOT IN (
+          SELECT id FROM optimization_runs WHERE user_id = ? ORDER BY created_at DESC LIMIT 30)`)
+          .run(userId, userId);
         log.info(`optimization ${run.id} for ${userId}: ${frontier.length} frontier plans from ${evaluations} evaluations (${strategyName})`);
       } catch (e) {
         db.prepare("UPDATE optimization_runs SET status = 'failed', error = ?, finished_at = ? WHERE id = ?")

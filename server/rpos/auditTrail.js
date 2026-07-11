@@ -81,7 +81,17 @@ export function searchComputations({ kind = null, userId = null, status = null, 
   }));
 }
 
-/** Retention: prune rows older than keepDays (explicit policy, not edits). */
-export function pruneAuditTrail({ keepDays = 180 } = {}) {
-  return db.prepare('DELETE FROM computation_log WHERE created_at < ?').run(now() - keepDays * 86400).changes;
+/**
+ * Retention: an explicit policy, never edits. High-volume routine kinds
+ * (twin.* runs once per synced workout — the explainability record for
+ * those already lives in inference_history) keep 30 days; everything else
+ * (optimization, simulation, research runs — low volume, high value) keeps
+ * 180 days. Called daily by the RPOS init.
+ */
+export function pruneAuditTrail({ routineKeepDays = 30, keepDays = 180 } = {}) {
+  const routine = db.prepare("DELETE FROM computation_log WHERE kind LIKE 'twin.%' AND created_at < ?")
+    .run(now() - routineKeepDays * 86400).changes;
+  const rest = db.prepare('DELETE FROM computation_log WHERE created_at < ?')
+    .run(now() - keepDays * 86400).changes;
+  return routine + rest;
 }
