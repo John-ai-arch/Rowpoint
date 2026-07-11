@@ -7,7 +7,7 @@ export async function renderAdmin(el) {
     el.innerHTML = '<div class="notice warn">Admin access requires the Admin role.</div>';
     return;
   }
-  const TABS = ['Overview', 'Analytics', 'AI', 'Users', 'Research', 'System', 'Security', 'Moderation', 'Broadcast', 'Audit'];
+  const TABS = ['Overview', 'Analytics', 'AI', 'Users', 'Research', 'System', 'Platform', 'Security', 'Moderation', 'Broadcast', 'Audit'];
   el.innerHTML = `<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <h1 style="margin:0">Admin</h1>
       ${state.user?.researchAdmin ? '<a class="btn secondary sm" href="#/research">🔬 Research platform</a>' : ''}
@@ -33,6 +33,7 @@ export async function renderAdmin(el) {
       if (tab === 'users') return await showUsers();
       if (tab === 'research') return await showResearch();
       if (tab === 'system') return await showSystem();
+      if (tab === 'platform') return await showPlatform();
       if (tab === 'security') return await showSecurity();
       if (tab === 'moderation') return await showModeration();
       if (tab === 'broadcast') return showBroadcast();
@@ -367,6 +368,82 @@ export async function renderAdmin(el) {
           </div>
           <p class="small muted mt">${a.reliability.workouts30d} workouts synced in the same window.</p></div>
       </div>`;
+  }
+
+  /* ================= PLATFORM (RPOS) ================= */
+
+  async function showPlatform() {
+    const [{ snapshot, validation, regressions }, queue, { organizations }] = await Promise.all([
+      api('/platform/status'), api('/platform/jobs'), api('/platform/orgs'),
+    ]);
+    const lat = snapshot.api.latencyByGroup || {};
+    body.innerHTML = `
+      <div class="grid cols3">
+        ${tile(validation.ok ? '<span style="color:var(--good)">●</span> valid' : `<span style="color:var(--bad)">●</span> ${validation.issues.length} issues`, 'plugin validation')}
+        ${tile(validation.componentCount, 'registered components')}
+        ${tile(regressions.length ? `<span style="color:var(--bad)">${regressions.length}</span>` : '0', 'performance regressions')}
+        ${tile(queue.stats.byStatus.pending || 0, 'jobs pending')}
+        ${tile(queue.stats.byStatus.running || 0, 'jobs running')}
+        ${tile(queue.stats.byStatus.failed || 0, 'jobs failed')}
+      </div>
+      ${validation.issues.length ? `<div class="notice warn">${validation.issues.map(esc).join('<br>')}</div>` : ''}
+      <div class="grid cols2">
+        <div class="card tight"><h3>API latency by area (last 200 req each)</h3>
+          <table><thead><tr><th>Area</th><th>p50</th><th>p95</th><th>max</th></tr></thead><tbody>
+          ${Object.entries(lat).sort((a, z) => z[1].p95 - a[1].p95).map(([g, s]) =>
+    `<tr><td><code>/api/${esc(g)}</code></td><td>${s.p50}ms</td><td>${s.p95}ms</td><td>${s.max}ms</td></tr>`).join('') || '<tr><td colspan=4 class="muted">no samples yet</td></tr>'}
+          </tbody></table></div>
+        <div class="card tight"><h3>Job execution</h3>
+          <table><thead><tr><th>Kind</th><th>Status</th><th>#</th><th>avg</th></tr></thead><tbody>
+          ${queue.execution.map(r => `<tr><td><code>${esc(r.kind)}</code></td><td>${esc(r.status)}</td><td>${r.count}</td><td>${r.avg_ms ?? '–'}ms</td></tr>`).join('') || '<tr><td colspan=4 class="muted">none yet</td></tr>'}
+          </tbody></table></div>
+      </div>
+      ${queue.failed.length ? `<div class="card tight"><h3>Failed jobs</h3>
+        ${queue.failed.slice(0, 10).map(j => `<div class="row" style="gap:8px;align-items:center;padding:3px 0">
+          <code style="flex:1">${esc(j.kind)}</code><span class="muted small" style="flex:2">${esc(j.error || '')}</span>
+          <button class="sm secondary" data-retry="${esc(j.id)}">Retry</button></div>`).join('')}</div>` : ''}
+      <div class="card tight"><h3>Computation audit trail (latest)</h3>
+        <div id="auditRows"></div></div>
+      <div class="card tight"><h3>Organizations</h3>
+        <p class="muted small">Enterprise groundwork: create an organization and attach coached teams. Full org management ships later; the data model and roles are in place.</p>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <input id="orgName" placeholder="Organization name" style="width:220px">
+          <button class="sm" id="orgCreate">Create</button>
+        </div>
+        <div id="orgList" class="mt">
+          ${organizations.map(o => `<div class="row" style="gap:8px;align-items:center;padding:3px 0">
+            <strong style="flex:1">${esc(o.name)}</strong>
+            <span class="muted small">${o.team_count} teams · ${o.member_count} members</span>
+            <input data-team-for="${esc(o.id)}" placeholder="Team ID to attach" style="width:200px">
+            <button class="sm secondary" data-attach="${esc(o.id)}">Attach team</button>
+          </div>`).join('') || '<p class="muted small">No organizations yet.</p>'}
+        </div></div>`;
+
+    body.querySelectorAll('[data-retry]').forEach(b => b.onclick = async () => {
+      try { await api(`/platform/jobs/${b.dataset.retry}/retry`, { method: 'POST' }); toast('Job re-queued'); showPlatform(); }
+      catch (e) { toast(e.message, 'error'); }
+    });
+    body.querySelector('#orgCreate').onclick = async () => {
+      const name = body.querySelector('#orgName').value.trim();
+      if (name.length < 2) return;
+      try { await api('/platform/orgs', { method: 'POST', body: { name } }); toast('Organization created'); showPlatform(); }
+      catch (e) { toast(e.message, 'error'); }
+    };
+    body.querySelectorAll('[data-attach]').forEach(b => b.onclick = async () => {
+      const teamId = body.querySelector(`[data-team-for="${b.dataset.attach}"]`).value.trim();
+      if (!teamId) return;
+      try { await api(`/platform/orgs/${b.dataset.attach}/teams`, { method: 'POST', body: { teamId } }); toast('Team attached'); showPlatform(); }
+      catch (e) { toast(e.message, 'error'); }
+    });
+    try {
+      const { computations } = await api('/platform/audit?limit=15');
+      body.querySelector('#auditRows').innerHTML = computations.length
+        ? `<table><thead><tr><th>Kind</th><th>Status</th><th>ms</th><th>Outputs</th><th>When</th></tr></thead><tbody>
+           ${computations.map(c => `<tr><td><code>${esc(c.kind)}</code></td><td>${esc(c.status)}</td><td>${c.durationMs ?? '–'}</td>
+             <td class="small">${esc(c.outputsRef || '—')}</td><td class="small">${esc(fmtDateTime(c.createdAt))}</td></tr>`).join('')}
+           </tbody></table>`
+        : '<p class="muted small">No computations recorded yet.</p>';
+    } catch { /* audit view is best-effort */ }
   }
 
   async function showSystem() {

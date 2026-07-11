@@ -64,6 +64,7 @@ import { initOptimizerEngine, optimizerRouter } from './optimizer/index.js';
 import { initDiscoveryEngine, discoveryRouter } from './discovery/index.js';
 import { initExperimentsEngine, experimentsRouter, validationRouter } from './experiments/index.js';
 import { initRegattaEngine, regattaRouter } from './regatta/index.js';
+import { initRposEngine, platformRouter } from './rpos/index.js';
 import { startJobScheduler } from './kernel/jobs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -145,9 +146,21 @@ export function createApp() {
   app.use('/api/regatta', regattaRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/experiments', experimentsRouter);
+  app.use('/api/platform', platformRouter);
   app.use('/api/research-admin/discovery', discoveryRouter);
   app.use('/api/research-admin/validation', validationRouter);
   app.use('/api/research-admin', researchAdminRouter);
+
+  // Versioned API aliases (RPOS): the same routers, addressable as /api/v1/…
+  // so future mobile apps and integrations pin a version. The unversioned
+  // paths ARE v1 and stay backward compatible; breaking changes ship as new
+  // /api/v2 mounts instead of mutating these.
+  app.use('/api/v1/twin', twinRouter);
+  app.use('/api/v1/physics', physicsRouter);
+  app.use('/api/v1/optimizer', optimizerRouter);
+  app.use('/api/v1/regatta', regattaRouter);
+  app.use('/api/v1/experiments', experimentsRouter);
+  app.use('/api/v1/platform', platformRouter);
 
   app.get('/api/status', (req, res) => res.json({ ok: true, name: 'RowPoint', ts: Date.now() }));
 
@@ -185,6 +198,23 @@ export function createApp() {
   return app;
 }
 
+/**
+ * Initialize every computational engine. Init order is irrelevant by design
+ * for the engines — they only meet through kernel contracts resolved at run
+ * time — except RPOS, which validates the loaded set and therefore goes
+ * last. Exported so the docs generator (server/genDocs.js) can bring the
+ * platform up without starting an HTTP server.
+ */
+export function initEngines() {
+  initTwinEngine();
+  initPhysicsEngine();
+  initOptimizerEngine();
+  initDiscoveryEngine();
+  initExperimentsEngine();
+  initRegattaEngine();
+  initRposEngine();
+}
+
 export function startServer(port = config.port) {
   warnIfStorageLooksEphemeral();
   const app = createApp();
@@ -193,14 +223,7 @@ export function startServer(port = config.port) {
   scheduleBackups();
   // Computational platform: engine event subscriptions + the background job
   // scheduler (ROWPOINT_JOBS_ENABLED=0 lets tests drive jobs deterministically).
-  // Init order is irrelevant by design — engines only meet through kernel
-  // contracts resolved at run time.
-  initTwinEngine();
-  initPhysicsEngine();
-  initOptimizerEngine();
-  initDiscoveryEngine();
-  initExperimentsEngine();
-  initRegattaEngine();
+  initEngines();
   startJobScheduler();
   return new Promise((resolve) => {
     server.listen(port, () => {

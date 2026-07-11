@@ -198,6 +198,14 @@ server/regatta/    Digital Regatta Simulation Engine: race-boat states from
                    optional tactical events, seeded Monte Carlo regattas on
                    worker threads (win/medal odds, rank matrix, sensitivity,
                    median-race replay), what-if lab, race-result validation
+server/rpos/       RowPoint Operating System: operator control over the job
+                   queue (retry/cancel/progress), plugin validation +
+                   platform inventory, observability snapshot + performance
+                   watchdog, immutable computation audit trail
+                   (computation_log, trigger-enforced append-only),
+                   organization groundwork, docs generated from live
+                   registries (npm run docs → docs/generated/), /api/v1
+                   versioned aliases
 server/ai/         training analysis engine · LLM coach (+ analysis-engine
                    fallback) · pacing classifier · plan validation
 server/groups.js   group dashboards, leaderboards, challenges, goals, chat,

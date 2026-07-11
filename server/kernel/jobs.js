@@ -14,6 +14,7 @@ import { Worker } from 'node:worker_threads';
 import { db } from '../db.js';
 import { uuid, now, safeJson } from '../util.js';
 import { logger } from '../log.js';
+import { emit } from './events.js';
 
 const log = logger('jobs');
 
@@ -57,6 +58,30 @@ export function enqueue(kind, { userId = null, payload = {}, priority = 5, delay
 export function cancel(id) {
   const r = db.prepare("UPDATE jobs SET status = 'cancelled', finished_at = ? WHERE id = ? AND status = 'pending'").run(now(), id);
   return r.changes > 0;
+}
+
+/** Re-queue a failed job with a fresh attempt budget (operator action). */
+export function retry(id) {
+  const r = db.prepare(
+    "UPDATE jobs SET status = 'pending', attempts = 0, error = NULL, run_at = ?, finished_at = NULL WHERE id = ? AND status = 'failed'")
+    .run(now(), id);
+  return r.changes > 0;
+}
+
+/** Every job kind registered in this process (RPOS plugin inventory). */
+export function jobKinds() {
+  return [...kinds.keys()].sort();
+}
+
+/** Live queue state: how much work is waiting/running/finished, per kind. */
+export function queueStats() {
+  return {
+    byStatus: Object.fromEntries(db.prepare('SELECT status, COUNT(*) c FROM jobs GROUP BY status').all().map(r => [r.status, r.c])),
+    oldestPendingAgeS: (() => {
+      const r = db.prepare("SELECT MIN(run_at) m FROM jobs WHERE status = 'pending'").get();
+      return r?.m ? Math.max(0, now() - r.m) : 0;
+    })(),
+  };
 }
 
 /**
@@ -112,6 +137,9 @@ async function runJob(row) {
     });
     db.prepare("UPDATE jobs SET status = 'completed', finished_at = ?, duration_ms = ?, error = NULL WHERE id = ?")
       .run(now(), Date.now() - startedMs, row.id);
+    // Platform event: the RPOS audit trail (and anything else) reacts here —
+    // the job system itself stays ignorant of who is listening.
+    emit('job.completed', { jobId: row.id, kind: row.kind, userId: row.user_id, durationMs: Date.now() - startedMs });
   } catch (e) {
     const attempts = row.attempts + 1;
     const willRetry = attempts < row.max_attempts;
@@ -127,6 +155,7 @@ async function runJob(row) {
         db.prepare('INSERT INTO health_events (id, kind, detail, user_id, created_at) VALUES (?,?,?,?,?)')
           .run(uuid(), 'job_failed', `${row.kind}: ${String(e.message).slice(0, 400)}`, row.user_id, now());
       } catch { /* never cascade */ }
+      emit('job.failed', { jobId: row.id, kind: row.kind, userId: row.user_id, error: String(e.message).slice(0, 200) });
     }
   }
 }

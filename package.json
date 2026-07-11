@@ -7,8 +7,9 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "node --no-warnings --test tests/unit.test.js tests/api.test.js tests/realtime.test.js tests/kernel.test.js tests/twin.test.js tests/physics.test.js tests/optimizer.test.js tests/discovery.test.js tests/experiments.test.js tests/regatta.test.js",
+    "test": "node --no-warnings --test tests/unit.test.js tests/api.test.js tests/realtime.test.js tests/kernel.test.js tests/twin.test.js tests/physics.test.js tests/optimizer.test.js tests/discovery.test.js tests/experiments.test.js tests/regatta.test.js tests/rpos.test.js",
     "start": "node server/index.js",
+    "docs": "node server/genDocs.js",
     "test:e2e": "playwright test",
     "backup": "node server/backup.js create",
     "backup:list": "node server/backup.js list",

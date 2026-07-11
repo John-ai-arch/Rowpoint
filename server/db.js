@@ -1077,6 +1077,58 @@ CREATE TABLE IF NOT EXISTS race_simulations (
   duration_ms INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_race_simulations ON race_simulations(user_id, created_at);
+
+/* -------- RowPoint Operating System (RPOS) --------
+   - computation_log: the platform's immutable audit trail — one row per
+     completed/failed background computation, recording which algorithm ran,
+     under which component versions, on which (hashed) inputs, producing
+     which outputs. Append-only, enforced by a trigger; old rows are pruned
+     by an explicit retention policy, never edited.
+   - organizations: enterprise groundwork — clubs/schools own teams and
+     carry role-scoped memberships. Deliberately minimal: full org UX is a
+     later product decision; the data model and role checks exist now so it
+     needs no schema rewrite. */
+CREATE TABLE IF NOT EXISTS computation_log (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  user_id TEXT,
+  status TEXT NOT NULL,
+  duration_ms INTEGER,
+  inputs_hash TEXT,
+  outputs_ref TEXT,
+  outputs_hash TEXT,
+  detail_json TEXT,
+  versions_json TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_computation_log ON computation_log(kind, created_at);
+CREATE INDEX IF NOT EXISTS idx_computation_log_user ON computation_log(user_id, created_at);
+CREATE TRIGGER IF NOT EXISTS computation_log_immutable
+  BEFORE UPDATE ON computation_log
+  BEGIN SELECT RAISE(ABORT, 'computation_log is append-only'); END;
+
+CREATE TABLE IF NOT EXISTS organizations (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS organization_members (
+  org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'athlete' CHECK (role IN ('admin','coach','athlete','researcher')),
+  joined_at INTEGER NOT NULL,
+  PRIMARY KEY (org_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS organization_teams (
+  org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  attached_at INTEGER NOT NULL,
+  PRIMARY KEY (org_id, team_id)
+);
 `);
 
 // Experiment participation is a SEPARATE explicit consent on top of the
@@ -1119,7 +1171,7 @@ metaSet('last_boot_at', Math.floor(Date.now() / 1000));
    gate for any *destructive* future migration (which must branch on the stored
    version rather than run unconditionally). Bump it whenever the schema
    changes. */
-const SCHEMA_VERSION = 13; // 9: kernel+twin · 10: optimizer · 11: discovery · 12: experiments · 13: regatta
+const SCHEMA_VERSION = 14; // 9: kernel+twin · 10: optimizer · 11: discovery · 12: experiments · 13: regatta · 14: rpos
 const priorSchema = Number(metaGet('schema_version') || 0);
 if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
 export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };

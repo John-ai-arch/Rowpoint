@@ -26,6 +26,8 @@ export const EVENTS = new Set([
   'experiment.updated',
   'research.snapshot',
   'race.result-recorded',
+  'job.completed',
+  'job.failed',
 ]);
 
 /** Declare a new event type before first use (typo guard for emit/on). */
