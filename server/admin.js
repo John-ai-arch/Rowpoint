@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { Router } from 'express';
-import { db, dbPersistenceInfo, inTransaction } from './db.js';
+import { db, dbPersistenceInfo } from './db.js';
 import { config } from './config.js';
 import { authRequired, adminRequired, audit, recordAuthEvent } from './middleware.js';
 import { metricsSnapshot } from './metrics.js';
@@ -19,7 +19,8 @@ import { mailConfigured } from './mailer.js';
 import { createBackup, listBackups, verifyBackup } from './backup.js';
 import { developerAnalytics } from './analytics.js';
 import { observatoryExport } from './observatory.js';
-import { uuid, now, badRequest, ApiError, isEmail, safeJson, researchId, hashPassword } from './util.js';
+import { uuid, now, badRequest, ApiError, isEmail, safeJson, hashPassword } from './util.js';
+import { deleteUserAccount } from './accountDeletion.js';
 
 export const adminRouter = Router();
 adminRouter.use(authRequired, adminRequired);
@@ -337,29 +338,30 @@ adminRouter.post('/users/:id/reset-password', (req, res) => {
   res.json({ ok: true, temporaryPassword: temp });
 });
 
-// Grant/revoke research participation on a user's behalf (support requests).
+// Turn research contribution OFF for a user (support/abuse handling).
+// Deliberately one-way: research consent can only be GIVEN by the athlete
+// themselves in their own Settings — an admin enabling it on someone's
+// behalf would put data into the research corpus without the person's
+// consent action.
 adminRouter.post('/users/:id/research', (req, res) => {
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!u) throw new ApiError(404, 'User not found.', 'not_found');
-  const optIn = !!req.body?.optIn;
-  db.prepare('UPDATE users SET research_opt_in = ? WHERE id = ?').run(optIn ? 1 : 0, u.id);
-  audit(req.user.id, optIn ? 'user.research.grant' : 'user.research.revoke', u.email, null);
-  res.json({ ok: true, researchOptIn: optIn });
+  if (req.body?.optIn) {
+    throw badRequest('Research contribution can only be enabled by the account owner in their own Settings.', 'consent_required');
+  }
+  db.prepare('UPDATE users SET research_opt_in = 0 WHERE id = ?').run(u.id);
+  audit(req.user.id, 'user.research.revoke', u.email, null);
+  res.json({ ok: true, researchOptIn: false });
 });
 
-// Manual deletion for support/GDPR requests — same semantics as the
-// user-initiated flow, including removal of research contributions.
+// Manual deletion for support/GDPR requests — the exact same implementation
+// as the user-initiated flow (server/accountDeletion.js), so both remove the
+// same complete set of data.
 adminRouter.delete('/users/:id', (req, res) => {
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!u) throw new ApiError(404, 'User not found.', 'not_found');
   if (u.email === req.user.email) throw badRequest('You cannot delete your own admin account from here.');
-  const rid = researchId(u.id);
-  inTransaction(() => {
-    db.prepare('DELETE FROM research_workouts WHERE research_id = ?').run(rid);
-    db.prepare('DELETE FROM research_wellness WHERE research_id = ?').run(rid);
-    db.prepare('DELETE FROM research_snapshots WHERE research_id = ?').run(rid);
-    db.prepare('DELETE FROM users WHERE id = ?').run(u.id);
-  });
+  deleteUserAccount(u);
   audit(req.user.id, 'user.delete', u.email, { requested: req.body?.reason || 'admin manual deletion' });
   res.json({ ok: true });
 });

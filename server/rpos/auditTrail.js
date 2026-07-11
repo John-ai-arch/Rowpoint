@@ -95,3 +95,19 @@ export function pruneAuditTrail({ routineKeepDays = 30, keepDays = 180 } = {}) {
     .run(now() - keepDays * 86400).changes;
   return routine + rest;
 }
+
+/**
+ * Retention for the operational/security logs, on the same daily cadence.
+ * auth_events rows carry email addresses (login attempts), so they must not
+ * accumulate forever: 12 months covers incident investigation; health_events
+ * is diagnostic telemetry and needs far less. Account deletion removes both
+ * immediately for the deleted account (server/accountDeletion.js) — this is
+ * the time bound for accounts that stay.
+ */
+export function pruneOperationalLogs({ authEventDays = 365, healthEventDays = 180 } = {}) {
+  const auth = db.prepare('DELETE FROM auth_events WHERE created_at < ?')
+    .run(now() - authEventDays * 86400).changes;
+  const health = db.prepare('DELETE FROM health_events WHERE created_at < ?')
+    .run(now() - healthEventDays * 86400).changes;
+  return auth + health;
+}

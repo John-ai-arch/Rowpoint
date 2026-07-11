@@ -143,7 +143,7 @@ export async function renderRow(el) {
     } catch (e) {
       const err = ergManager.error;
       el.querySelector('#connError').innerHTML = `<div class="notice warn mt"><strong>${esc(err?.code === 'machine_busy' ? 'Machine in use' : 'Couldn\'t connect')}</strong><br>${esc(err?.message || e.message)}</div>`;
-      try { await api('/users/me/health-events', { method: 'POST', body: { kind: 'ble_error', detail: `${err?.code}: ${err?.message}`.slice(0, 300) } }); } catch { /* offline */ }
+      try { await api('/users/me/health-events', { method: 'POST', body: { kind: 'ble_error', detail: `${err?.code}: ${err?.raw || err?.message}`.slice(0, 300) } }); } catch { /* offline */ }
       connButtons();
     }
     updateConnState();
@@ -169,7 +169,7 @@ export async function renderRow(el) {
         <div class="metric hero"><div class="val" id="mPace">–:––</div><div class="lbl">split /500m</div></div>
         <div class="metric"><div class="val" id="mDist">0</div><div class="lbl">meters</div></div>
         <div class="metric"><div class="val" id="mTime">0:00</div><div class="lbl">time</div></div>
-        <div class="metric"><div class="val" id="mRate">0</div><div class="lbl">s/m</div></div>
+        <div class="metric"><div class="val" id="mRate">0</div><div class="lbl">stroke rate</div></div>
         <div class="metric"><div class="val" id="mHr">–</div><div class="lbl">heart rate</div></div>
         <div class="metric"><div class="val" id="mWatts">0</div><div class="lbl">watts</div></div>
         <div class="metric"><div class="val" id="mAvg">–:––</div><div class="lbl">avg split</div></div>

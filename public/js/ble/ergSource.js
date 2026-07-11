@@ -149,28 +149,34 @@ class ErgManager {
 }
 
 // §1.4 — specific, human diagnoses instead of a generic "connection failed".
+// Every classification keeps the browser's raw exception text in `raw` for
+// telemetry; `message` is what the athlete sees and is always human language,
+// never a raw exception.
 export function classifyBleError(e) {
   const msg = String(e?.message || e);
-  if (e?.code === 'no_bluetooth') return { code: 'no_bluetooth', message: msg };
+  if (e?.code === 'no_bluetooth') return { code: 'no_bluetooth', message: msg, raw: msg };
   if (/User cancelled|chooser|NotFoundError/i.test(msg)) {
-    return { code: 'cancelled', message: 'No machine selected. Make sure the monitor is awake (press any PM5 button) and try again.' };
+    return { code: 'cancelled', raw: msg, message: 'No machine selected. Make sure the monitor is awake (press any PM5 button) and try again.' };
   }
   if (/GATT operation already in progress|already connected|busy|in use/i.test(msg)) {
     return {
-      code: 'machine_busy',
+      code: 'machine_busy', raw: msg,
       message: 'This machine appears to be connected to another phone or tablet. Only one device can hold the Bluetooth connection at a time — ask the other user to disconnect, or pick a different erg.',
     };
   }
   if (/GATT Server is disconnected|Connection failed|NetworkError|timed out/i.test(msg)) {
     return {
-      code: 'rf_or_range',
+      code: 'rf_or_range', raw: msg,
       message: 'The connection dropped while talking to the machine. If this keeps happening near many Wi-Fi routers or USB 3 devices, it is usually radio interference near the monitor rather than an app problem — try moving the phone closer to the PM5.',
     };
   }
   if (/security|permission|denied/i.test(msg)) {
-    return { code: 'permission', message: 'Bluetooth permission was denied. RowPoint uses Bluetooth only to discover nearby rowing machines — we never use or store your location.' };
+    return { code: 'permission', raw: msg, message: 'Bluetooth permission was denied. RowPoint uses Bluetooth only to discover nearby rowing machines — we never use or store your location.' };
   }
-  return { code: 'unknown', message: msg };
+  return {
+    code: 'unknown', raw: msg,
+    message: 'Something interrupted the Bluetooth connection. Turn the monitor on, keep your device close to it, and try again.',
+  };
 }
 
 function withTimeout(promise, ms, message) {

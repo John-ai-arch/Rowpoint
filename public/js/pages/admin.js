@@ -174,7 +174,7 @@ export async function renderAdmin(el) {
           <button class="sm secondary" id="uFeedback">Feedback / reports</button>
           <button class="sm secondary" id="uReset">Reset password</button>
           <button class="sm secondary" id="uRole">${u.role === 'admin' ? 'Revoke admin role' : 'Grant admin role'}</button>
-          <button class="sm secondary" id="uResearch">${u.researchOptIn ? 'Revoke research participation' : 'Grant research participation'}</button>
+          ${u.researchOptIn ? '<button class="sm secondary" id="uResearch">Stop research contribution</button>' : ''}
           <button class="sm danger" id="delUser">Delete account</button>
         </div>
         <div id="uDetail"></div></div>`;
@@ -199,10 +199,12 @@ export async function renderAdmin(el) {
         const r = await api(`/admin/users/${u.id}/reset-password`, { method: 'POST' });
         out.querySelector('#uDetail').innerHTML = `<div class="notice mt">Temporary password (share securely, shown once): <code>${esc(r.temporaryPassword)}</code></div>`;
       };
-      out.querySelector('#uResearch').onclick = async () => {
-        await api(`/admin/users/${u.id}/research`, { method: 'POST', body: { optIn: !u.researchOptIn } });
-        toast('Research participation updated.'); refresh();
-      };
+      // Revoke-only by design: research consent can only be GIVEN by the
+      // athlete in their own Settings, so no admin-side "grant" control exists.
+      out.querySelector('#uResearch')?.addEventListener('click', async () => {
+        await api(`/admin/users/${u.id}/research`, { method: 'POST', body: { optIn: false } });
+        toast('Research contribution stopped for this account.'); refresh();
+      });
       out.querySelector('#uWorkouts').onclick = async () => {
         const { workouts } = await api(`/admin/users/${u.id}/workouts`);
         out.querySelector('#uDetail').innerHTML = workouts.length ? `<table class="mt"><thead><tr><th>When</th><th>Type</th><th>Dist</th><th>Time</th><th>Avg HR</th><th>Pacing</th></tr></thead><tbody>

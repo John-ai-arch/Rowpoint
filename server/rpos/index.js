@@ -11,7 +11,7 @@ import { uuid, now } from '../util.js';
 import { logger } from '../log.js';
 import { register } from '../kernel/registry.js';
 import { on } from '../kernel/events.js';
-import { recordComputation, pruneAuditTrail } from './auditTrail.js';
+import { recordComputation, pruneAuditTrail, pruneOperationalLogs } from './auditTrail.js';
 import { validatePlatform } from './plugins.js';
 import { startWatchdog } from './observability.js';
 export { platformRouter } from './api.js';
@@ -63,9 +63,9 @@ export function initRposEngine() {
   startWatchdog();
   // Audit retention: at boot and then daily (a long-lived process must not
   // grow computation_log unboundedly — the policy lives in pruneAuditTrail).
-  try { pruneAuditTrail(); } catch { /* non-fatal */ }
+  try { pruneAuditTrail(); pruneOperationalLogs(); } catch { /* non-fatal */ }
   const pruneTimer = setInterval(() => {
-    try { pruneAuditTrail(); } catch { /* non-fatal */ }
+    try { pruneAuditTrail(); pruneOperationalLogs(); } catch { /* non-fatal */ }
   }, 24 * 3600 * 1000);
   pruneTimer.unref();
 }

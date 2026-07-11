@@ -57,7 +57,8 @@ real pace/HR data, distribution, recovery spacing, risk flags), the AI coach's
 guardrails (coach assignment always wins; overtraining always yields rest) and
 its property that different histories produce different recommendations,
 pacing classifier, CSAFE framing, verification gating, research opt-out
-write-time semantics + HR-retention consent, RBAC role grant/revoke, admin
+write-time semantics (the athlete's own HR series is always retained; only
+the research copy is consent-gated), RBAC role grant/revoke, admin
 password reset, AI adherence tracking, security event logging, admin access
 control + audit logging, email-search rate limiting, live metric fan-out and
 presence/staleness over WebSocket, and full coach → rower → live session →

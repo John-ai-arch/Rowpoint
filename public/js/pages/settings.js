@@ -51,7 +51,7 @@ export function renderSettings(el) {
     <h3>${esc(t('settings.research'))}</h3>
     ${toggle('researchOptIn', 'Contribute my workout and wellness data to research', u.researchOptIn)}
     ${toggle('researchShareDemographics', 'Include demographics (age decade, weight class) in contributions', u.researchShareDemographics)}
-    <p class="muted small">Pseudonymized — your name and email never enter the research dataset. Contributions include workout metrics and, when recorded, full heart-rate data. Demographics are a separate consent: with it off, your workouts contribute without any age or weight information. While opted in, the full per-second heart-rate recording is kept with each of your workouts; opted out, only summary statistics (average/max/min, time in zones, drift) are stored. Opting out stops all future contribution immediately and never affects any feature. Data contributed while opted in stays in the research set; deleting your account removes it entirely.</p>
+    <p class="muted small">Pseudonymized — your name and email never enter the research dataset. Contributions include workout metrics and, when recorded, full heart-rate data. Demographics are a separate consent: with it off, your workouts contribute without any age or weight information. Opting out stops all future contribution immediately and never affects any feature — your own workouts, charts, and heart-rate history stay exactly the same. Data contributed while opted in stays in the research set; deleting your account removes it entirely.</p>
   </div>
 
   <div class="card">

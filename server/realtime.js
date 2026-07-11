@@ -162,20 +162,22 @@ export function attachRealtime(httpServer) {
       for (const channel of joined) {
         const m = channels.get(channel);
         const entry = m?.get(user.id);
+        // Only act when this socket is still the user's CURRENT entry. A
+        // rower who dropped and already re-subscribed on a fresh socket has
+        // replaced the entry — the dead socket's late close event must not
+        // clobber the live connection or evict them from the channel.
+        if (!entry || entry.ws !== ws) continue;
         // Keep last-known metrics visible but flagged disconnected for a grace
         // period (rower reconnecting mid-session, §2.3), then drop.
-        if (entry) {
-          entry.ws = ws; // closed socket → connected:false in roster()
-          broadcast(channel, { type: 'presence', channel, event: 'disconnected', userId: user.id });
-          setTimeout(() => {
-            const cur = channels.get(channel)?.get(user.id);
-            if (cur && cur.ws.readyState !== cur.ws.OPEN) {
-              channels.get(channel).delete(user.id);
-              broadcast(channel, { type: 'presence', channel, event: 'left', userId: user.id });
-              if (channels.get(channel)?.size === 0) channels.delete(channel);
-            }
-          }, 30000).unref?.();
-        }
+        broadcast(channel, { type: 'presence', channel, event: 'disconnected', userId: user.id });
+        setTimeout(() => {
+          const cur = channels.get(channel)?.get(user.id);
+          if (cur && cur.ws === ws) {
+            channels.get(channel).delete(user.id);
+            broadcast(channel, { type: 'presence', channel, event: 'left', userId: user.id });
+            if (channels.get(channel)?.size === 0) channels.delete(channel);
+          }
+        }, 30000).unref?.();
       }
     });
   });

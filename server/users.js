@@ -1,12 +1,13 @@
 // Profile, settings (units / privacy / notifications / research toggle),
 // data export (§14), and full in-app account deletion (§10.1 / §14).
 import { Router } from 'express';
-import { db, inTransaction } from './db.js';
+import { db } from './db.js';
 import { config } from './config.js';
 import { authRequired } from './middleware.js';
 import { publicUser } from './auth.js';
-import { badRequest, clampInt, clampNum, uuid, now, researchId, safeImageUrl } from './util.js';
+import { badRequest, clampInt, clampNum, uuid, now, safeImageUrl } from './util.js';
 import { refreshSmartNotifications } from './smartNotifications.js';
+import { deleteUserAccount } from './accountDeletion.js';
 
 export const usersRouter = Router();
 usersRouter.use(authRequired);
@@ -129,15 +130,8 @@ usersRouter.delete('/me', (req, res) => {
   if (!req.body?.confirm || String(req.body.confirm).toLowerCase() !== 'delete') {
     throw badRequest('Send {"confirm":"delete"} to permanently delete your account.', 'confirm_required');
   }
-  const rid = researchId(req.user.id);
-  // One atomic unit: every pseudonymous research row (workouts, wellness, AND
-  // longitudinal snapshots) plus the account itself. Teams owned by a deleted
-  // coach cascade; memberships cascade via FK.
-  inTransaction(() => {
-    db.prepare('DELETE FROM research_workouts WHERE research_id = ?').run(rid);
-    db.prepare('DELETE FROM research_wellness WHERE research_id = ?').run(rid);
-    db.prepare('DELETE FROM research_snapshots WHERE research_id = ?').run(rid);
-    db.prepare('DELETE FROM users WHERE id = ?').run(req.user.id);
-  });
+  // One atomic unit — see server/accountDeletion.js for the complete scrub
+  // (research tables, security logs, telemetry, mail, jobs, name snapshots).
+  deleteUserAccount(req.user);
   res.json({ ok: true, message: 'Your account and all associated data have been deleted.' });
 });

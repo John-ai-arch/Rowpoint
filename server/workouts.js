@@ -71,12 +71,11 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
   // history, and summaries stay synchronized with the same session.
   const hrSeries = sanitizeHrSeries(b.hrSeries);
   const hr = hrSummary(hrSeries, effectiveMaxHr(req.user));
-  // HR retention follows research consent: participants keep the full
-  // timestamped sample series (it powers their per-workout HR chart, research
-  // contributions, and the AI coach's HR analyses); non-participants keep
-  // only the minimum their own history needs — the summary statistics
-  // (avg/max/min, time-in-zone, drift) — and the raw series is discarded.
-  const storeFullHrSeries = !!req.user.research_opt_in;
+  // The athlete's own HR recording always stays with their own workout — it
+  // powers their per-workout HR chart and the AI coach's HR analyses, and the
+  // Settings screen promises that research opt-out never affects a feature.
+  // Research consent gates only whether a pseudonymized COPY enters the
+  // research dataset (server/research.js checks it at write time).
 
   // Pure normalization first (no DB), then commit the workout + its splits +
   // force curves as ONE atomic unit so a mid-write failure can never leave a
@@ -108,7 +107,7 @@ workoutsRouter.post('/sync', verifiedRequired, async (req, res) => {
         // split-level averages are the fallback for relay-only sessions.
         wAvg('avgStrokeRate'), hr?.avg ?? wAvg('avgHeartRate') ?? null, wAvg('avgPowerWatts'),
         plan ? JSON.stringify(plan) : null,
-        storeFullHrSeries && hrSeries.length ? JSON.stringify(hrSeries) : null,
+        hrSeries.length ? JSON.stringify(hrSeries) : null,
         hr ? JSON.stringify({ zoneSeconds: hr.zoneSeconds, maxHrUsed: hr.maxHrUsed, driftPct: hr.driftPct }) : null,
         hr?.max ?? null, hr?.min ?? null, now());
 

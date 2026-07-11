@@ -145,12 +145,15 @@ test('rower does the daily wellness check-in and sees trends', async () => {
   await page.close();
 });
 
-test('AI coach recommendation appears on the dashboard with disclosure and category', async () => {
+test('AI coach recommendation appears on the dashboard with disclosure — and no raw identifiers', async () => {
   const page = await rowerCtx.newPage();
   await page.goto(`${BASE}/#/`);
   await expect(page.getByText("Today's coach recommendation")).toBeVisible();
   await expect(page.getByText('AI-generated').first()).toBeVisible(); // machine-generated disclosure
-  await expect(page.locator('code').first()).toBeVisible();           // recommendation category shown
+  // The card must never leak internal enum values (e.g. "steady_state"):
+  // every visible word is human language, not a snake_case identifier.
+  const cardText = await page.locator('.ai-card').first().innerText();
+  expect(cardText).not.toMatch(/\b[a-z]+_[a-z_]+\b/);
   await page.screenshot({ path: 'shots/07-dashboard.png', fullPage: true });
   await page.close();
 });

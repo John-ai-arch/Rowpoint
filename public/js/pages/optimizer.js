@@ -44,7 +44,7 @@ export async function renderOptimizer(el) {
     ${runs.length ? `<div class="card"><h3>${esc(t('opt.previousRuns'))}</h3>
       ${runs.slice(0, 8).map(r => `<button class="list-item" data-run="${esc(r.id)}" style="width:100%;text-align:left;background:none;border:0;padding:7px 4px;cursor:pointer;color:inherit;font:inherit">
         <div style="flex:1"><strong>${esc(fmtDateTime(r.created_at))}</strong>
-          <div class="muted small">${esc(r.kind)} · ${esc(r.algorithm || '')}</div></div>
+          <div class="muted small">${esc(r.kind)}${r.algorithm ? ` · ${esc(String(r.algorithm).replace('@', ' v').replaceAll('-', ' '))}` : ''}</div></div>
         <span class="badge ${r.status === 'completed' ? 'green' : r.status === 'failed' ? 'amber' : 'blue'}">${esc(r.status)}</span>
       </button>`).join('')}</div>` : ''}
     <p class="muted small">${esc(t('opt.disclaimer'))}</p>`;

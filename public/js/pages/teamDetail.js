@@ -128,8 +128,8 @@ export async function renderTeamDetail(el, teamId) {
       root.querySelector('#aiSuggestions').innerHTML = `<div class="card ai-card">
         <div class="row between"><h3>Today's AI suggestions to your rowers</h3><span class="ai-tag">✨ review / override</span></div>
         ${suggestions.map(s => `<div class="list-item"><div style="flex:1">
-          <strong>${esc(s.displayName)}</strong> <span class="badge ${s.status === 'overridden' ? 'amber' : 'blue'}">${esc(s.status)}</span>
-          <div class="muted small">${esc(s.text)}</div><div class="ai-tag">${esc(s.rationaleTag)}</div></div>
+          <strong>${esc(s.displayName)}</strong> <span class="badge ${s.status === 'overridden' ? 'amber' : 'blue'}">${esc(String(s.status || '').replaceAll('_', ' '))}</span>
+          <div class="muted small">${esc(s.text)}</div><div class="ai-tag">${esc(String(s.rationaleTag || '').replaceAll('_', ' '))}</div></div>
           <div><button class="ghost sm" data-appr="${s.id}">Approve</button><button class="ghost sm" data-ovr="${s.id}">Override</button></div>
         </div>`).join('')}</div>`;
       root.querySelectorAll('[data-appr]').forEach(b => b.onclick = async () => {

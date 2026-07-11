@@ -161,7 +161,7 @@ async function openVariable(cat, name, est) {
     ev.innerHTML = evidence.length ? evidence.slice(0, 8).map(e => `
       <div class="list-item" style="padding:6px 0">
         <div style="flex:1"><strong>${esc(fmtDateTime(e.at))}</strong>
-          <div class="muted small">${esc(e.stage)} · ${esc(e.modelVersion || '')}</div></div>
+          <div class="muted small">${esc(String(e.stage || '').replaceAll('-', ' '))}${e.modelVersion ? ` · ${esc(String(e.modelVersion).replace('@', ' v'))}` : ''}</div></div>
         <div>${Number.isFinite(e.estimate?.value) ? fmtVal(e.estimate.value, meta.unit) : ''}</div>
       </div>`).join('') : esc(t('twin.noEvidence'));
   } catch { /* modal already shows loading text; leave it non-fatal */ }

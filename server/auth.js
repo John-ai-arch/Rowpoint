@@ -363,7 +363,10 @@ function oauthLoginOrSignup(res, provider, identity, body) {
   res.json(issueSession(res, fresh));
 }
 
-authRouter.post('/oauth/google', async (req, res) => {
+// Rate-limited like the other credential endpoints: each attempt costs an
+// outbound verification round-trip, so an unauthenticated flood is both a
+// brute-force and an amplification vector without this.
+authRouter.post('/oauth/google', rateLimit('oauth', 30, 15 * 60 * 1000), async (req, res) => {
   if (!config.googleClientId) {
     throw new ApiError(501, 'Google sign-in is not configured on this server. Set GOOGLE_CLIENT_ID to enable it.', 'oauth_unconfigured');
   }
@@ -402,7 +405,7 @@ async function verifyAppleIdToken(idToken) {
   return { sub: c.sub, email: String(c.email || `${c.sub}@privaterelay.appleid.com`).toLowerCase(), name: 'Apple user' };
 }
 
-authRouter.post('/oauth/apple', async (req, res) => {
+authRouter.post('/oauth/apple', rateLimit('oauth', 30, 15 * 60 * 1000), async (req, res) => {
   if (!config.appleClientId) {
     throw new ApiError(501, 'Sign in with Apple is not configured on this server. Set APPLE_CLIENT_ID (your Services ID) to enable it.', 'oauth_unconfigured');
   }

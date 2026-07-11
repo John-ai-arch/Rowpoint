@@ -92,7 +92,7 @@ export async function renderProgress(el) {
       <div class="stat-tile"><div class="n">${data.totals.hours}</div><div class="l">${esc(t('progress.totalHours'))}</div></div>
       <div class="stat-tile"><div class="n">${fmtDistance(data.month.meters)}</div><div class="l">${esc(t('progress.thisMonth'))}</div></div>
       <div class="stat-tile"><div class="n">${data.week.workouts}</div><div class="l">${esc(t('progress.thisWeek'))} · ${esc(t('common.workouts', { count: data.week.workouts }))}</div></div>
-      <div class="stat-tile"><div class="n">${data.improvement.hadPriorWeek ? (data.improvement.metersDelta >= 0 ? '+' : '') + fmtDistance(data.improvement.metersDelta) : '—'}</div><div class="l">${esc(t('progress.thisWeek'))} vs. ${esc(t('progress.thisWeek'))}−1</div></div>
+      <div class="stat-tile"><div class="n">${data.improvement.hadPriorWeek ? (data.improvement.metersDelta >= 0 ? '+' : '') + fmtDistance(data.improvement.metersDelta) : '—'}</div><div class="l">${esc(t('progress.vsLastWeek'))}</div></div>
     </div>
 
     <div class="card">
@@ -108,7 +108,7 @@ export async function renderProgress(el) {
         ${prCard(t('progress.highestRate'), data.records.highestStrokeRate && `${data.records.highestStrokeRate.spm} spm`, data.records.highestStrokeRate && fmtDate(data.records.highestStrokeRate.at))}
         ${prCard(t('progress.biggestWeek'), data.records.biggestWeekMeters && fmtDistance(data.records.biggestWeekMeters))}
         ${prCard(t('progress.biggestMonth'), data.records.biggestMonthMeters && fmtDistance(data.records.biggestMonthMeters))}
-        ${prCard(t('progress.longestStreak'), data.records.longestStreakDays ? t('progress.nDays', { n: data.records.longestStreakDays }) : null)}
+        ${prCard(t('progress.longestStreak'), data.records.longestStreakDays ? t('progress.nDays', { n: data.records.longestStreakDays, count: data.records.longestStreakDays }) : null)}
       </div>
     </div>
 

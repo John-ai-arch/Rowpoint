@@ -23,17 +23,17 @@ export async function renderWorkoutDetail(el, id) {
 
     <div class="grid cols3">
       <div class="stat-tile"><div class="n">${fmtSplit(w.avg_split_s)}</div><div class="l">avg /500m</div></div>
-      <div class="stat-tile"><div class="n">${Math.round(w.avg_stroke_rate || 0)}</div><div class="l">avg s/m</div></div>
+      <div class="stat-tile"><div class="n">${Math.round(w.avg_stroke_rate || 0)}</div><div class="l">avg stroke rate</div></div>
       <div class="stat-tile"><div class="n">${w.avg_heart_rate ? Math.round(w.avg_heart_rate) : '–'}</div><div class="l">avg HR</div></div>
     </div>
 
     ${fb ? `<div class="card ai-card">
       <div class="row between"><h3>Pacing feedback</h3><span class="ai-tag">✨ AI-generated</span></div>
       <p>${esc(fb.text)}</p>
-      <p class="muted small">Classification: <code>${esc(fb.classification)}</code>
+      <p class="muted small">Pacing: <strong>${esc(String(fb.classification || '').replaceAll('_', ' '))}</strong>
         ${Number.isFinite(fb.firstThirdPace) ? ` · first third ${fmtSplit(fb.firstThirdPace)} · last third ${fmtSplit(fb.lastThirdPace)} · avg ${fmtSplit(fb.avgPace)}` : ''}</p>
       ${fb.perInterval?.length ? `<details><summary class="small muted">Per-interval breakdown</summary>
-        ${fb.perInterval.map(p => `<div class="small">Interval ${p.interval}: <code>${esc(p.tag)}</code></div>`).join('')}</details>` : ''}
+        ${fb.perInterval.map(p => `<div class="small">Interval ${p.interval}: ${esc(String(p.tag || '').replaceAll('_', ' '))}</div>`).join('')}</details>` : ''}
     </div>` : ''}
 
     ${splits.length ? `<div class="card">
@@ -129,7 +129,7 @@ async function renderPhysics(card, workoutId) {
     <p class="muted small">${esc(t('physics.energyNote'))} ${badge(e.grossEfficiency.provenance)}</p>` : ''}
     ${rhythm ? `<p class="small">${esc(t('physics.rhythm'))}: <strong>${rhythm.value.toFixed(1)} : 1</strong>
       ${p.stroke.driveTimeS ? ` · ${esc(t('physics.driveTime'))}: <strong>${p.stroke.driveTimeS.value.toFixed(2)}s</strong>` : ''}
-      ${badge(rhythm.provenance)} <span class="muted small">(${esc(p.stroke.source)})</span></p>` : ''}
+      ${badge(rhythm.provenance)} <span class="muted small">(${p.stroke.source === 'force-curve' ? 'from your force curves' : 'modeled from stroke rate'})</span></p>` : ''}
     ${p.recovery ? `<p class="small">${esc(t('physics.recovery'))}: <strong>~${Math.round(p.recovery.hoursToRecover)}h</strong>
       <span class="muted">· ${esc(t('physics.residual24'))}: ${Math.round(p.recovery.residualIn24h.overall)}/100</span></p>` : ''}
     ${d?.available ? `<p class="small" style="margin-bottom:0"><strong>${esc(t('physics.why'))}</strong> ${esc(d.explanation)}</p>` : ''}

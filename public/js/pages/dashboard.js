@@ -178,10 +178,11 @@ function renderCoachCard(suggestion) {
   const w = rec.workout || {};
   const overridden = suggestion.status === 'overridden';
   // §11.5 disclosure: machine-generated coaching is always labeled as such,
-  // and the generation path (LLM vs analysis engine) is never blurred.
-  const sourceLabel = suggestion.source === 'llm' ? '✨ AI-generated · LLM coach'
+  // and the generation path (language model vs deterministic analysis) is
+  // never blurred — phrased for athletes, not developers.
+  const sourceLabel = suggestion.source === 'llm' ? '✨ AI-generated · AI coach'
     : suggestion.source === 'guardrail' ? 'Coach plan first'
-      : '✨ AI-generated · analysis engine';
+      : '✨ AI-generated · training analysis';
   const confidence = suggestion.confidence || rec.confidence;
   const dur = Array.isArray(w.durationMinutes) ? `${w.durationMinutes[0]}–${w.durationMinutes[1]} min` : null;
   const targets = [
@@ -199,7 +200,7 @@ function renderCoachCard(suggestion) {
   return `
     <div class="card ai-card">
       <div class="row between"><h3>Today's coach recommendation</h3><span class="ai-tag">${sourceLabel}</span></div>
-      <p><strong>${esc(rec.title || '')}</strong> <code>${esc(suggestion.rationaleTag || rec.category || '')}</code>
+      <p><strong>${esc(rec.title || '')}</strong>
         ${confidence ? `<span class="badge ${confidence === 'high' ? 'green' : confidence === 'medium' ? 'blue' : 'gray'}">${esc(confidence)} confidence</span>` : ''}</p>
       ${w.description ? `<p>${esc(w.description)}</p>` : ''}
       ${dur || targets ? `<p class="muted small">${[dur, targets].filter(Boolean).join(' · ')}</p>` : ''}

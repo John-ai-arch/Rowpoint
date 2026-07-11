@@ -105,6 +105,17 @@ export function recordAuthEvent(kind, { email, userId, detail } = {}) {
 // "Google sign-in is not configured" must never be masked as "Internal server
 // error"); only unexpected exceptions are masked and logged.
 export function errorHandler(err, req, res, _next) {
+  // Body-parser failures are CLIENT errors, not server faults: malformed JSON
+  // and oversized payloads must answer 400/413 with a clean message — never a
+  // masked 500 that pollutes health_events and the 5xx counters (which would
+  // let anyone fill the admin error log by posting garbage).
+  if (!(err instanceof ApiError)) {
+    if (err?.type === 'entity.parse.failed') {
+      err = new ApiError(400, 'The request body is not valid JSON.', 'invalid_json');
+    } else if (err?.type === 'entity.too.large') {
+      err = new ApiError(413, 'The request payload is too large.', 'payload_too_large');
+    }
+  }
   const isApiError = err instanceof ApiError;
   const status = isApiError ? err.status : 500;
   if (!isApiError || status >= 500) {

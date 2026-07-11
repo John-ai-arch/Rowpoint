@@ -162,4 +162,38 @@ test('tokens invalidated by logout are refused on the WebSocket too', async () =
   assert.equal(msg.code, 'unauthenticated', 'stale token_version rejected at the WS layer');
 });
 
+test('a late close from a replaced socket never clobbers a reconnected rower (regression)', async () => {
+  const cWs = await connectWs(coach.token);
+  cWs.send({ type: 'subscribe', channel, role: 'coach' });
+  await cWs.next(m => m.type === 'roster');
+
+  // Ann's connection drops mid-session and she reconnects — but the dead
+  // socket's close event reaches the server only AFTER the new subscription
+  // exists (the common order over flaky radio links).
+  const dead = await connectWs(ann.token);
+  dead.send({ type: 'subscribe', channel });
+  await cWs.next(m => m.type === 'presence' && m.event === 'joined' && m.userId === ann.user.id);
+
+  const live = await connectWs(ann.token);
+  live.send({ type: 'subscribe', channel });
+  await cWs.next(m => m.type === 'presence' && m.event === 'joined' && m.userId === ann.user.id);
+
+  dead.ws.close();
+  await new Promise(r => setTimeout(r, 300)); // let the late close be processed
+
+  // The live connection must still be first-class: metrics keep flowing…
+  live.send({ type: 'metrics', channel, payload: { distanceM: 900, elapsedS: 200, avgSplitS: 118 } });
+  const m = await cWs.next(x => x.type === 'metrics' && x.userId === ann.user.id);
+  assert.equal(m.metrics.distanceM, 900);
+
+  // …and the roster still shows her connected, not disconnected/evicted.
+  cWs.send({ type: 'roster', channel });
+  const roster = await cWs.next(x => x.type === 'roster');
+  const annEntry = roster.roster.find(r => r.userId === ann.user.id);
+  assert.ok(annEntry, 'rower still present in the channel');
+  assert.equal(annEntry.connected, true, 'late close of the replaced socket must not mark the live one disconnected');
+
+  cWs.ws.close(); live.ws.close();
+});
+
 test.after(() => server.close());

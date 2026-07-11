@@ -58,6 +58,19 @@ test('setup accounts', async () => {
   rower2 = await makeUser('rower2@test.com', 'rower', { displayName: 'Ben Rower' });
 });
 
+/* ---------------- transport-level input handling ---------------- */
+
+test('malformed JSON and oversized payloads answer as client errors, never masked 500s', async () => {
+  const raw = (body) => fetch(`${BASE}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+  const bad = await raw('{this is not json');
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).error, 'invalid_json');
+
+  const huge = await raw(`{"email":"${'x'.repeat(5 * 1024 * 1024)}"}`); // over the 4 MB body limit
+  assert.equal(huge.status, 413);
+  assert.equal((await huge.json()).error, 'payload_too_large');
+});
+
 /* ---------------- auth & verification gating (§2.1) ---------------- */
 
 test('there is NO way in without email verification: no token at signup, none at login', async () => {
@@ -439,11 +452,20 @@ test('admin: password reset issues a working temporary password', async () => {
   rower2.token = login.body.token;
 });
 
-test('admin: research participation can be granted/revoked per user', async () => {
+test('admin: research participation is revoke-only — consent can only be given by the athlete', async () => {
+  // Admin can switch contribution OFF (support/abuse handling)…
   await req(`/admin/users/${rower2.user.id}/research`, { method: 'POST', body: { optIn: false }, token: admin.token });
   let found = await req('/admin/users/search?email=rower2@test.com', { token: admin.token });
   assert.equal(found.body.user.researchOptIn, false);
-  await req(`/admin/users/${rower2.user.id}/research`, { method: 'POST', body: { optIn: true }, token: admin.token });
+  // …but can NOT switch it on: that would put data into the research corpus
+  // without any consent action from the person it belongs to.
+  const grant = await req(`/admin/users/${rower2.user.id}/research`, { method: 'POST', body: { optIn: true }, token: admin.token });
+  assert.equal(grant.status, 400);
+  assert.equal(grant.body.error, 'consent_required');
+  found = await req('/admin/users/search?email=rower2@test.com', { token: admin.token });
+  assert.equal(found.body.user.researchOptIn, false);
+  // Only the athlete re-enables it, in their own Settings.
+  await req('/users/me', { method: 'PATCH', body: { researchOptIn: true }, token: rower2.token });
   found = await req('/admin/users/search?email=rower2@test.com', { token: admin.token });
   assert.equal(found.body.user.researchOptIn, true);
 });
@@ -572,14 +594,27 @@ test('CSV export contains workouts and wellness; account deletion removes everyt
 
   const victim = await makeUser('deleteme@test.com');
   await req('/workouts/sync', { method: 'POST', body: workoutBody([130, 130, 130]), token: victim.token });
+  // leave a telemetry crumb too — deletion must scrub it
+  await req('/users/me/health-events', { method: 'POST', body: { kind: 'client_error', detail: 'crumb' }, token: victim.token });
   const before = (await req('/admin/research/workouts', { token: admin.token })).body.rows.length;
   assert.equal((await req('/users/me', { method: 'DELETE', body: { confirm: 'wrong' }, token: victim.token })).status, 400);
   const del = await req('/users/me', { method: 'DELETE', body: { confirm: 'delete' }, token: victim.token });
   assert.equal(del.status, 200);
   assert.equal((await req('/auth/me', { token: victim.token })).status, 401);
-  assert.equal((await req('/auth/login', { method: 'POST', body: { email: 'deleteme@test.com', password: 'password123' } })).status, 401);
   const after = (await req('/admin/research/workouts', { token: admin.token })).body.rows.length;
   assert.equal(after, before - 1, 'research contribution removed on deletion');
+
+  // Deletion also scrubs everything OUTSIDE the FK graph: security logs keep
+  // the email of every login attempt, telemetry rows keep the user id — the
+  // privacy policy promises deletion is complete, so none may survive.
+  // (Checked BEFORE the login probe below, which legitimately records a fresh
+  // post-deletion login_fail event for the now-nonexistent address.)
+  const events = (await req('/admin/security/auth-events', { token: admin.token })).body.events;
+  assert.ok(!events.some(e => e.email === 'deleteme@test.com'), 'auth events for the deleted account are scrubbed');
+  const health = (await req('/admin/health', { token: admin.token })).body.recent;
+  assert.ok(!health.some(h => h.user_id === victim.user.id), 'telemetry rows for the deleted account are scrubbed');
+
+  assert.equal((await req('/auth/login', { method: 'POST', body: { email: 'deleteme@test.com', password: 'password123' } })).status, 401);
 });
 
 /* ---------------- heart-rate subsystem (server side) ---------------- */
@@ -627,21 +662,24 @@ test('malformed HR series are sanitized, never crash sync', async () => {
   assert.deepEqual(d.body.workout.hrSeries, [[1, 130], [3, 128]]);
 });
 
-test('HR retention follows research consent: opted-out users keep summary only, no raw series', async () => {
+test('own HR series is kept regardless of research consent (opt-out must not cost a feature)', async () => {
   const hrSeries = [];
   for (let t = 0; t < 60; t++) hrSeries.push([t, 150]);
 
-  // opted out → summary statistics stored, raw series discarded
+  // Opted out → the athlete's own workout still keeps the full recording:
+  // their per-workout HR chart must never depend on research participation
+  // (the Settings screen promises opt-out has no feature cost). Research
+  // contribution gating is covered separately by the opt-out semantics tests.
   await req('/users/me', { method: 'PATCH', body: { researchOptIn: false }, token: rower2.token });
   const minimal = workoutBody([131, 131, 131], { hrSeries });
   assert.equal((await req('/workouts/sync', { method: 'POST', body: minimal, token: rower2.token })).status, 201);
   const d1 = await req(`/workouts/${minimal.id}`, { token: rower2.token });
-  assert.deepEqual(d1.body.workout.hrSeries, [], 'raw series not retained without research consent');
-  assert.equal(d1.body.workout.avg_heart_rate, 150, 'summary avg still available for their own history');
+  assert.equal(d1.body.workout.hrSeries.length, 60, 'own series retained without research consent');
+  assert.equal(d1.body.workout.avg_heart_rate, 150);
   assert.equal(d1.body.workout.max_heart_rate, 150);
-  assert.equal(d1.body.workout.hrZones.zoneSeconds.length, 5, 'zone summary still available');
+  assert.equal(d1.body.workout.hrZones.zoneSeconds.length, 5);
 
-  // opted in → the full series is kept with the workout
+  // opted in → identical retention
   await req('/users/me', { method: 'PATCH', body: { researchOptIn: true }, token: rower2.token });
   const full = workoutBody([131.5, 131.5, 131.5], { hrSeries });
   assert.equal((await req('/workouts/sync', { method: 'POST', body: full, token: rower2.token })).status, 201);
