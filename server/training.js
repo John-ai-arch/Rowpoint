@@ -11,6 +11,7 @@ import {
   currentWeekIndex, inferPhaseFromRace, PHASES,
 } from './ai/periodization.js';
 import { uuid, now, clampInt, clampNum, safeJson, ApiError, badRequest } from './util.js';
+import { emit } from './kernel/events.js';
 
 export const trainingRouter = Router();
 trainingRouter.use(authRequired);
@@ -305,6 +306,12 @@ trainingRouter.patch('/races/:id', (req, res) => {
       b.notes !== undefined ? (b.notes ? String(b.notes).slice(0, 500) : null) : r.notes,
       b.resultTimeSeconds !== undefined ? clampNum(b.resultTimeSeconds, 60, 20000) : r.result_time_s,
       now(), r.id);
+  // A newly-entered result is evidence: the regatta engine validates any
+  // prediction it made for this race against reality (event subscribers).
+  const resultTimeS = b.resultTimeSeconds !== undefined ? clampNum(b.resultTimeSeconds, 60, 20000) : null;
+  if (resultTimeS && !r.result_time_s) {
+    emit('race.result-recorded', { userId: req.user.id, raceId: r.id, resultTimeS });
+  }
   res.json({ race: presentRace(db.prepare('SELECT * FROM races WHERE id = ?').get(r.id)) });
 });
 

@@ -10,6 +10,7 @@ import { renderPlan } from './pages/plan.js';
 import { renderLab } from './pages/lab.js';
 import { renderTwin } from './pages/twin.js';
 import { renderOptimizer } from './pages/optimizer.js';
+import { renderRaceLab } from './pages/racelab.js';
 import { renderObservatory } from './pages/observatory.js';
 import { renderBenchmark } from './pages/benchmark.js';
 import { renderStroke } from './pages/stroke.js';
@@ -41,6 +42,7 @@ const routes = [
   { re: /^\/lab/, page: renderLab, tab: 'progress' },
   { re: /^\/athlete/, page: renderTwin, tab: 'progress' },
   { re: /^\/optimizer/, page: renderOptimizer, tab: 'progress' },
+  { re: /^\/racelab/, page: renderRaceLab, tab: 'progress' },
   { re: /^\/observatory/, page: renderObservatory, tab: 'progress' },
   { re: /^\/benchmark/, page: renderBenchmark, tab: 'progress' },
   { re: /^\/stroke/, page: renderStroke, tab: 'row' },

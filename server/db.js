@@ -1053,6 +1053,30 @@ CREATE TABLE IF NOT EXISTS model_transitions (
   metrics_json TEXT,
   created_at INTEGER NOT NULL
 );
+
+/* -------- Digital Regatta Simulation Engine --------
+   Every simulation run is a full reproducibility record: the prepared boat
+   field + environment + strategy (config_json), the seed, the component
+   versions, the aggregated outcome distributions (summary_json) and the
+   median-race computational replay (replay_json, stored separately from the
+   summary because it is an order of magnitude larger and only fetched when
+   the user opens the replay view). Strictly own-data. */
+CREATE TABLE IF NOT EXISTS race_simulations (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','completed','failed')),
+  config_json TEXT NOT NULL,
+  seed INTEGER,
+  versions_json TEXT,
+  summary_json TEXT,
+  replay_json TEXT,
+  race_id TEXT,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  duration_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_race_simulations ON race_simulations(user_id, created_at);
 `);
 
 // Experiment participation is a SEPARATE explicit consent on top of the
@@ -1095,7 +1119,7 @@ metaSet('last_boot_at', Math.floor(Date.now() / 1000));
    gate for any *destructive* future migration (which must branch on the stored
    version rather than run unconditionally). Bump it whenever the schema
    changes. */
-const SCHEMA_VERSION = 12; // 9: kernel+twin · 10: optimizer · 11: discovery · 12: experiments
+const SCHEMA_VERSION = 13; // 9: kernel+twin · 10: optimizer · 11: discovery · 12: experiments · 13: regatta
 const priorSchema = Number(metaGet('schema_version') || 0);
 if (priorSchema !== SCHEMA_VERSION) metaSet('schema_version', SCHEMA_VERSION);
 export const schemaInfo = { version: SCHEMA_VERSION, previousVersion: priorSchema };

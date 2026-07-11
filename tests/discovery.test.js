@@ -34,7 +34,13 @@ const BASE = `http://127.0.0.1:${server.address().port}`;
    "higher volume ↔ faster improvement" is TRUE in this dataset and the
    correlation screen must find it (negative ρ against the slope). */
 const WEEK_S = 7 * 86400;
-const T0 = Math.floor(Date.now() / 1000) - 12 * WEEK_S;
+// Align the seed epoch to a Monday 00:00 UTC so each engineered 7-day block
+// maps to exactly one ISO week regardless of what weekday the tests run on
+// (a Saturday start would split every block across two ISO weeks and turn
+// the first week's volume into a partial — a date-sensitive false failure).
+const raw0 = Math.floor(Date.now() / 1000) - 12 * WEEK_S;
+const dow = new Date(raw0 * 1000).getUTCDay(); // 0=Sun..6=Sat
+const T0 = raw0 - ((dow + 6) % 7) * 86400 - (raw0 % 86400);
 
 function seedResearchData() {
   const ins = db.prepare(`INSERT INTO research_workouts (

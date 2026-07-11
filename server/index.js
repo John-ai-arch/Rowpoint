@@ -63,6 +63,7 @@ import { initPhysicsEngine, physicsRouter } from './physics/index.js';
 import { initOptimizerEngine, optimizerRouter } from './optimizer/index.js';
 import { initDiscoveryEngine, discoveryRouter } from './discovery/index.js';
 import { initExperimentsEngine, experimentsRouter, validationRouter } from './experiments/index.js';
+import { initRegattaEngine, regattaRouter } from './regatta/index.js';
 import { startJobScheduler } from './kernel/jobs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -141,6 +142,7 @@ export function createApp() {
   app.use('/api/twin', twinRouter);
   app.use('/api/physics', physicsRouter);
   app.use('/api/optimizer', optimizerRouter);
+  app.use('/api/regatta', regattaRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/experiments', experimentsRouter);
   app.use('/api/research-admin/discovery', discoveryRouter);
@@ -198,6 +200,7 @@ export function startServer(port = config.port) {
   initOptimizerEngine();
   initDiscoveryEngine();
   initExperimentsEngine();
+  initRegattaEngine();
   startJobScheduler();
   return new Promise((resolve) => {
     server.listen(port, () => {

@@ -8,7 +8,9 @@
 import { register } from '../kernel/registry.js';
 import { provide } from '../kernel/providers.js';
 import { mean } from '../kernel/stats.js';
-import { estimateCriticalPower } from './power.js';
+import { estimateCriticalPower, sustainablePower, wattsFromSplit, splitFromWatts } from './power.js';
+import { BOAT_CLASSES, PROPULSIVE_EFFICIENCY, crewSyncFactor, dragConstant, boatSpeed } from './boat.js';
+import { environmentModel } from './environment.js';
 export { physicsRouter } from './api.js';
 
 const MODELS = [
@@ -32,6 +34,24 @@ export function initPhysicsEngine() {
   for (const [name, description] of MODELS) {
     register({ name, kind: 'model', version: '1.0', description });
   }
+
+  // Regatta boat-physics provider: the hull/power/environment models the
+  // Digital Regatta Simulation Engine builds its race dynamics on. The
+  // contract shape is documented in server/regatta/athleteModel.js (the
+  // consumer); this is the only bridge — regatta never imports physics code.
+  provide('regatta.boat-physics', {
+    name: 'physics',
+    modelVersion: 'physics.boat@1.0',
+    BOAT_CLASSES,
+    PROPULSIVE_EFFICIENCY,
+    crewSyncFactor,
+    dragConstant,
+    boatSpeed,
+    sustainablePower,
+    wattsFromSplit,
+    splitFromWatts,
+    environmentModel,
+  });
 
   // Twin inference provider: same contract shape as the twin's own models
   // ({ name, category, modelVersion, infer(ctx) → { variable: Estimate } }).

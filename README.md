@@ -190,6 +190,14 @@ server/discovery/  Scientific Discovery Engine (research-admin only):
                    correction, k-anonymity), recorded exclusions, dataset-
                    snapshot-deterministic analyses, human review queue —
                    nothing auto-publishes
+server/regatta/    Digital Regatta Simulation Engine: race-boat states from
+                   the twin (+ relative opponent archetypes and manual rivals),
+                   discrete-time race dynamics (coupled W′-balance, technique
+                   fade, hull + air drag via the physics provider contract),
+                   normalized strategy profiles, environment distributions,
+                   optional tactical events, seeded Monte Carlo regattas on
+                   worker threads (win/medal odds, rank matrix, sensitivity,
+                   median-race replay), what-if lab, race-result validation
 server/ai/         training analysis engine · LLM coach (+ analysis-engine
                    fallback) · pacing classifier · plan validation
 server/groups.js   group dashboards, leaderboards, challenges, goals, chat,
