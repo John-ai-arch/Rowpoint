@@ -179,6 +179,20 @@ class HeartRateManagerImpl {
     this._reconnectAttempts = 0;
     this._batteryTimer = null;
     this._batteryWarned = 0;
+    // Returning to the foreground: if the strap signal was lost while the OS
+    // had the page paused (or the backoff ran out of attempts in the
+    // background), kick one fresh silent-reconnect round immediately instead
+    // of waiting for a manual tap. Guarded — this module also loads under
+    // Node for the unit tests, where there is no document.
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible' || !this.monitor) return;
+        if (this.state !== SensorState.SIGNAL_LOST && this.state !== SensorState.DISCONNECTED) return;
+        if (!hrSettings().autoReconnect) return;
+        this._reconnectAttempts = 0;
+        this._scheduleReconnect();
+      });
+    }
   }
 
   on(event, fn) {
@@ -387,14 +401,13 @@ class HeartRateManagerImpl {
 
   stats() {
     // Session stats when recording, else stats over the recent window.
-    const src = this._session?.samples?.length ? this._session.samples.map(([, b]) => b) : this._recent.map(([, b]) => b);
+    // Single pass, no spread: a multi-hour session holds tens of thousands of
+    // samples, and Math.min(...huge) overflows the JS argument-list limit.
+    const src = this._session?.samples?.length ? this._session.samples : this._recent;
     if (!src.length) return null;
-    return {
-      current: this.bpm,
-      min: Math.min(...src),
-      max: Math.max(...src),
-      avg: Math.round(src.reduce((a, b) => a + b, 0) / src.length),
-    };
+    let min = Infinity, max = -Infinity, sum = 0;
+    for (const [, b] of src) { if (b < min) min = b; if (b > max) max = b; sum += b; }
+    return { current: this.bpm, min, max, avg: Math.round(sum / src.length) };
   }
 
   async disconnect() {
@@ -415,7 +428,7 @@ class HeartRateManagerImpl {
 
 /* ---------------- real BLE monitor ---------------- */
 
-class BleHeartRateMonitor {
+export class BleHeartRateMonitor {
   kind = 'ble';
 
   constructor(device) {
@@ -424,7 +437,14 @@ class BleHeartRateMonitor {
     this._battLevel = null;
     this._manufacturer = null;
     this._firmware = null;
-    this._advWatcher = null;
+    // Stable handler references so re-subscribing (reconnects) can always
+    // remove-before-add, and disconnect() can detach everything — the same
+    // BluetoothDevice/characteristic objects are reused by the browser across
+    // sessions, so an unremoved listener would stack and multiply readings.
+    this._onMeasurement = (e) => this._reading(parseHrMeasurement(e.target.value));
+    this._onBatteryNotify = (e) => this._battery(e.target.value.getUint8(0));
+    this._onAdvertisement = (e) => this._rssi(e.rssi);
+    this._onGattDisconnected = () => this._disc();
   }
 
   onReading(fn) { this._reading = fn; }
@@ -439,17 +459,22 @@ class BleHeartRateMonitor {
     };
   }
 
-  async connect() {
-    const server = await this.device.gatt.connect();
-
-    // GATT discovery: locate the official HR service + measurement
-    // characteristic, subscribe to notifications (event-driven, no polling).
+  // GATT discovery: locate the official HR service + measurement
+  // characteristic, subscribe to notifications (event-driven, no polling).
+  // Shared by connect() and reconnect(); remove-before-add keeps exactly ONE
+  // measurement listener no matter how many reconnect cycles the session has
+  // been through (the browser hands back the same characteristic object).
+  async _subscribeMeasurement(server) {
     const hr = await server.getPrimaryService(HR_SERVICE);
     const meas = await hr.getCharacteristic(HR_MEASUREMENT);
     await meas.startNotifications();
-    meas.addEventListener('characteristicvaluechanged', (e) => {
-      this._reading(parseHrMeasurement(e.target.value));
-    });
+    meas.removeEventListener('characteristicvaluechanged', this._onMeasurement);
+    meas.addEventListener('characteristicvaluechanged', this._onMeasurement);
+  }
+
+  async connect() {
+    const server = await this.device.gatt.connect();
+    await this._subscribeMeasurement(server);
 
     // Optional battery service — many but not all straps expose it.
     try {
@@ -458,7 +483,8 @@ class BleHeartRateMonitor {
       await this.readBattery();
       try {
         await this._battChar.startNotifications();
-        this._battChar.addEventListener('characteristicvaluechanged', (e) => this._battery(e.target.value.getUint8(0)));
+        this._battChar.removeEventListener('characteristicvaluechanged', this._onBatteryNotify);
+        this._battChar.addEventListener('characteristicvaluechanged', this._onBatteryNotify);
       } catch { /* battery notify unsupported — periodic reads cover it */ }
     } catch { this._battery(null); }
 
@@ -472,22 +498,19 @@ class BleHeartRateMonitor {
     // Signal strength via advertisement watching, where the browser supports it.
     try {
       if (this.device.watchAdvertisements) {
-        this.device.addEventListener('advertisementreceived', (e) => this._rssi(e.rssi));
+        this.device.removeEventListener('advertisementreceived', this._onAdvertisement);
+        this.device.addEventListener('advertisementreceived', this._onAdvertisement);
         await this.device.watchAdvertisements();
       }
     } catch { /* unsupported — RSSI shows as n/a */ }
 
-    this.device.addEventListener('gattserverdisconnected', () => this._disc());
+    this.device.removeEventListener('gattserverdisconnected', this._onGattDisconnected);
+    this.device.addEventListener('gattserverdisconnected', this._onGattDisconnected);
   }
 
   async reconnect() {
     await this.device.gatt.connect();
-    const hr = await this.device.gatt.getPrimaryService(HR_SERVICE);
-    const meas = await hr.getCharacteristic(HR_MEASUREMENT);
-    await meas.startNotifications();
-    meas.addEventListener('characteristicvaluechanged', (e) => {
-      this._reading(parseHrMeasurement(e.target.value));
-    });
+    await this._subscribeMeasurement(this.device.gatt);
   }
 
   async readBattery() {
@@ -498,7 +521,16 @@ class BleHeartRateMonitor {
     } catch { /* transient read failure */ }
   }
 
-  async disconnect() { try { this.device.gatt.disconnect(); } catch { /* gone */ } }
+  async disconnect() {
+    // Detach every device-level listener FIRST: an intentional teardown must
+    // not fire the signal-lost path, and a replaced monitor on the same
+    // physical device must not leave stale handlers behind.
+    try {
+      this.device.removeEventListener('gattserverdisconnected', this._onGattDisconnected);
+      this.device.removeEventListener('advertisementreceived', this._onAdvertisement);
+    } catch { /* never fatal */ }
+    try { this.device.gatt.disconnect(); } catch { /* gone */ }
+  }
 }
 
 async function readString(service, uuid) {
@@ -557,7 +589,10 @@ function friendlyHrError(e) {
   if (/GATT Server is disconnected|Connection failed|NetworkError/i.test(msg)) {
     return 'Connection to the monitor dropped during setup. Make sure it isn\'t connected to another app or watch, then retry.';
   }
-  return msg;
+  if (/timed out/i.test(msg)) return msg; // withTimeout messages are already human
+  // Unknown failures: never surface a raw browser exception to the athlete.
+  console.warn('[hr] connect failed:', msg);
+  return 'Could not finish connecting to the monitor. Make sure it is awake, worn, and nearby, then try again.';
 }
 
 function withTimeout(promise, ms, message) {

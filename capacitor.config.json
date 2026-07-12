@@ -1,0 +1,8 @@
+{
+  "appId": "fit.rowpoint.app",
+  "appName": "RowPoint",
+  "webDir": "public",
+  "ios": {
+    "scheme": "RowPoint"
+  }
+}

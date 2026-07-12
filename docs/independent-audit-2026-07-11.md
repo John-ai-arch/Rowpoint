@@ -187,3 +187,57 @@ elements outside the admin console display a machine's hardware serial
 number (user-meaningful device info) and an admin-issued temporary password.
 The admin console (owner-only) intentionally retains technical detail — it
 is an operations surface, not a user surface.
+
+---
+
+# Addendum — Mobile & Bluetooth hardening pass (2026-07-12)
+
+A follow-up session focused on native-mobile readiness and the BLE layer.
+Verified with the full suites (258 unit/API tests — 5 new — and 16 e2e).
+
+## Fixed
+
+1. **FTMS parser field-offset bug (both rower and bike data).** The
+   Metabolic Equivalent flag (bit 10, 1 byte) was not skipped, so on any
+   FTMS machine that reports METs every field after it — elapsed time —
+   was read one byte off (garbage durations). Fixed per the Bluetooth SIG
+   spec; regression-tested with crafted packets.
+2. **FTMS parsers could throw on truncated packets** (the PM5 parsers
+   guard lengths; these didn't). Now guarded — one malformed notification
+   can never break the metric stream. Tested.
+3. **Duplicate BLE listeners across reconnects.** `BleHeartRateMonitor`
+   added a new measurement listener on every signal-loss reconnect
+   (readings multiplied N× after N drops), and all three adapters (HRM,
+   PM5, FTMS) stacked `gattserverdisconnected` handlers on the reused
+   BluetoothDevice object across sessions. All listeners now use stable
+   handler refs with remove-before-add, and intentional disconnects detach
+   device-level handlers first (an intended teardown can no longer present
+   as a surprise mid-workout disconnect). Unit-tested with a fake GATT
+   stack: exactly one listener after any number of reconnects.
+4. **HR `stats()` argument-list overflow risk**: `Math.min(...samples)`
+   over a multi-hour session's samples; replaced with a single pass.
+5. **Raw exception text in HR connect errors** (unknown-failure fallback)
+   replaced with a human message; raw detail goes to the console.
+6. **Foreground-return recovery**: returning to a visible tab/app with a
+   lost strap signal now kicks a fresh silent-reconnect round immediately
+   (backoff attempts reset) instead of waiting for a manual tap.
+7. **iPhone safe areas**: top bar, toasts, content, and the tab bar now
+   pad with `env(safe-area-inset-*)` (top/left/right added; bottom already
+   existed) so nothing sits under the notch, status bar, or home indicator
+   in standalone/native shells. Desktop rendering verified unchanged
+   (insets resolve to the previous fallback values).
+8. **Capacitor scaffolding**: `capacitor.config.json` added (app id
+   `fit.rowpoint.app`, webDir `public`, iOS scheme) and APPSTORE.md updated
+   with the exact Android 12+ manifest permission block
+   (`BLUETOOTH_SCAN` with `neverForLocation` + `BLUETOOTH_CONNECT`) and the
+   `server.url` wiring note.
+
+## Explicitly NOT claimed as verified
+
+- **Native iOS/Android builds still do not exist** and cannot be produced
+  or tested from this environment (requires a Mac/Xcode, developer
+  accounts, and devices). The native BLE adapters described in APPSTORE.md
+  Phase 2 remain to be written and can only be validated on hardware.
+- The PM5/FTMS/HRM listener-hygiene fixes are unit-tested against fake
+  GATT objects; behavior against physical machines still needs a
+  real-device pass (PM5 + strap), including mid-workout drop/reconnect.

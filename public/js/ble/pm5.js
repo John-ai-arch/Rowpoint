@@ -87,12 +87,22 @@ export class Concept2PM5Adapter {
       rx.addEventListener('characteristicvaluechanged', (e) => this._onControlResponse(e.target.value));
     } catch { this._ctrlTx = null; }
 
-    this.device.addEventListener('gattserverdisconnected', () => {
+    // Stable handler ref + remove-before-add: the browser reuses the same
+    // BluetoothDevice object across connect cycles, so an anonymous listener
+    // here would stack one copy per session on the same physical erg.
+    this._onGattDisconnected ??= () => {
       for (const fn of this.listeners) fn({ ...this.live, disconnected: true, ts: Date.now() });
-    });
+    };
+    this.device.removeEventListener('gattserverdisconnected', this._onGattDisconnected);
+    this.device.addEventListener('gattserverdisconnected', this._onGattDisconnected);
   }
 
-  async disconnect() { try { this.device.gatt.disconnect(); } catch { /* already gone */ } }
+  async disconnect() {
+    // Intentional teardown: detach the disconnect handler first so ending a
+    // session never presents as an unexpected mid-workout disconnect.
+    try { this.device.removeEventListener('gattserverdisconnected', this._onGattDisconnected); } catch { /* never fatal */ }
+    try { this.device.gatt.disconnect(); } catch { /* already gone */ }
+  }
 
   /* ---- Rowing Data parsing (offsets per the C2 spec tables) ---- */
 

@@ -29,15 +29,27 @@ existing `public/` app in a real iOS project and gives you native plugins.
 
 ## Phase 1 — Create the iOS project (half a day)
 
+The Capacitor config already lives in the repo (`capacitor.config.json`:
+app id `fit.rowpoint.app`, name RowPoint, web dir `public`, iOS scheme
+`RowPoint`) — so skip `cap init` and go straight to:
+
 ```bash
 npm install @capacitor/core @capacitor/cli @capacitor/ios
-npx cap init RowPoint fit.rowpoint.app --web-dir public
 npx cap add ios
 ```
 
-Edit `capacitor.config.ts`: set `server.url` to your deployed HTTPS backend
-(so the wrapped app talks to the same live server and accounts as the web
-version), and set `ios.scheme` to `RowPoint`.
+Then add to `capacitor.config.json` a `server.url` pointing at your deployed
+HTTPS backend, so the wrapped app talks to the same live server and accounts
+as the web version:
+
+```json
+"server": { "url": "https://YOUR-DEPLOYED-HOST" }
+```
+
+(The SPA uses relative `/api` and `/ws` paths throughout, so pointing
+`server.url` at the deployment is the only wiring the client needs. The
+safe-area insets, `viewport-fit=cover`, and lifecycle handling are already in
+the web code.)
 
 Open it in Xcode: `npx cap open ios`. Set your team under Signing &
 Capabilities; it should build and run on a simulator immediately — the whole
@@ -130,8 +142,21 @@ Work through these before submission; each is a known rejection reason:
 The identical Capacitor project ships to Google Play
 (`npx cap add android`): you'll need the Data Safety form, an `.aab` bundle,
 the closed-testing requirement for new personal accounts (12 testers / 14
-days before production), and `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT` runtime
-permissions — the permission-rationale copy is already written in the app.
+days before production), and these entries in
+`android/app/src/main/AndroidManifest.xml` (Android 12+ runtime Bluetooth
+permissions; `neverForLocation` is what lets you declare that scanning is not
+used to derive location — matching the in-app copy):
+
+```xml
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+                 android:usesPermissionFlags="neverForLocation" />
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+<!-- Legacy (Android ≤ 11) -->
+<uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+```
+
+The permission-rationale copy is already written in the app.
 
 ## Cost & time summary
 

@@ -11,7 +11,8 @@ const { fallbackRecommendation, generateRecommendation, defaultPlanFor, CATEGORI
 const { classifyPacing, classifyIntervals, PACING } = await import('../server/ai/pacing.js');
 const { validatePlan } = await import('../server/ai/planValidation.js');
 const { buildFrame, parseFrame, encodeWorkout } = await import('../public/js/ble/csafe.js');
-const { parseHrMeasurement } = await import('../public/js/ble/sensors.js');
+const { parseHrMeasurement, BleHeartRateMonitor } = await import('../public/js/ble/sensors.js');
+const { FTMSAdapter } = await import('../public/js/ble/ftms.js');
 const { sanitizeHrSeries, hrSummary, zoneIndex, effectiveMaxHr } = await import('../server/hr.js');
 const { computeResearchVariables } = await import('../server/research/variables.js');
 const { qualityFlags } = await import('../server/research/quality.js');
@@ -313,6 +314,87 @@ test('HRM parsing: corrupt/short packets never throw, yield null bpm', () => {
   assert.equal(parseHrMeasurement(dv()).bpm, undefined ?? null); // empty
   assert.equal(parseHrMeasurement(null).bpm, null);
   assert.equal(parseHrMeasurement(dv(0x00, 0)).bpm, null);   // zero bpm invalid
+});
+
+test('HRM reconnect keeps exactly ONE measurement listener (no stacking across drops)', async () => {
+  // Fake GATT surface: the browser reuses the same characteristic object
+  // across reconnects, so each re-subscribe must remove-before-add.
+  const measListeners = [];
+  const meas = {
+    startNotifications: async () => {},
+    addEventListener: (_t, fn) => measListeners.push(fn),
+    removeEventListener: (_t, fn) => { const i = measListeners.indexOf(fn); if (i >= 0) measListeners.splice(i, 1); },
+  };
+  const hrService = { getCharacteristic: async () => meas };
+  const gatt = {
+    connect: async () => gatt,
+    // Only the HR service exists; battery/device-info lookups reject (both optional).
+    getPrimaryService: async (uuid) => { if (uuid === 0x180d) return hrService; throw new Error('not present'); },
+    disconnect: () => {},
+  };
+  const deviceListeners = new Map(); // event → count
+  const device = {
+    id: 'strap-1', name: 'Test Strap', gatt,
+    addEventListener: (t) => deviceListeners.set(t, (deviceListeners.get(t) || 0) + 1),
+    removeEventListener: (t) => deviceListeners.set(t, Math.max(0, (deviceListeners.get(t) || 0) - 1)),
+  };
+
+  const m = new BleHeartRateMonitor(device);
+  await m.connect();
+  await m.reconnect();
+  await m.reconnect(); // two signal-loss recoveries in one session
+  assert.equal(measListeners.length, 1, 'one measurement listener after any number of reconnects');
+  assert.equal(deviceListeners.get('gattserverdisconnected'), 1, 'one device disconnect listener');
+
+  // Readings flow through the single listener.
+  let reads = 0;
+  m.onReading(() => reads++);
+  measListeners[0]({ target: { value: dv(0x00, 132) } });
+  assert.equal(reads, 1, 'a reading fires the callback exactly once');
+
+  // Intentional teardown detaches the device-level listeners.
+  await m.disconnect();
+  assert.equal(deviceListeners.get('gattserverdisconnected'), 0, 'disconnect removes device listeners');
+});
+
+/* ---------------- FTMS parsing (Bluetooth SIG Fitness Machine Service) ---------------- */
+
+const ftmsRower = () => new FTMSAdapter({ id: 'ftms-1', name: 'Test Rower' });
+
+test('FTMS rower data: metabolic-equivalent flag (bit 10) shifts fields correctly', () => {
+  const a = ftmsRower();
+  // flags 0x0F01: More Data (no stroke fields) + energy (0x0100) + HR (0x0200)
+  // + MET (0x0400) + elapsed time (0x0800).
+  // Layout: flags(2) energy(5) hr(1) met(1) elapsed(2)
+  a._parseRowerData(dv(0x01, 0x0F, /*energy*/ 0x64, 0x00, 0x10, 0x00, 0x05, /*hr*/ 148, /*met*/ 38, /*elapsed 600s*/ 0x58, 0x02));
+  assert.equal(a.live.calories, 100);
+  assert.equal(a.live.heartRate, 148);
+  assert.equal(a.live.elapsedS, 600, 'elapsed time parsed at the right offset despite the MET byte');
+});
+
+test('FTMS rower data: full packet without MET still parses (regression guard)', () => {
+  const a = ftmsRower();
+  // flags 0x0800 + bit0=1: only elapsed time present.
+  a._parseRowerData(dv(0x01, 0x08, 0x2C, 0x01)); // 300 s
+  assert.equal(a.live.elapsedS, 300);
+});
+
+test('FTMS parsing: truncated packets never throw, keep last good values', () => {
+  const a = ftmsRower();
+  a._parseRowerData(dv(0x01, 0x08, 0x2C, 0x01)); // good: elapsed 300
+  // Claims distance (bit2) but the buffer ends — must not throw.
+  a._parseRowerData(dv(0x05, 0x00, 0x11));
+  a._parseRowerData(dv(0x05));                    // shorter than the flags field
+  a._parseBikeData(dv(0x41, 0x00, 0x22));         // bike: claims power, truncated
+  assert.equal(a.live.elapsedS, 300, 'previous good values survive corrupt packets');
+});
+
+test('FTMS bike data: MET flag (bit 10) shifts elapsed time correctly', () => {
+  const a = ftmsRower();
+  // flags 0x0F01: bit0=1 (no speed) + energy + HR + MET + elapsed.
+  a._parseBikeData(dv(0x01, 0x0F, /*energy*/ 0x32, 0x00, 0x08, 0x00, 0x02, /*hr*/ 121, /*met*/ 52, /*elapsed 90s*/ 0x5A, 0x00));
+  assert.equal(a.live.heartRate, 121);
+  assert.equal(a.live.elapsedS, 90);
 });
 
 /* ---------------- HR series summary & zones (server) ---------------- */

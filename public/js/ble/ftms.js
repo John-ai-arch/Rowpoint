@@ -46,9 +46,13 @@ export class FTMSAdapter {
     } else {
       throw new Error('This fitness machine exposes no rower or bike data characteristic.');
     }
-    this.device.addEventListener('gattserverdisconnected', () => {
+    // Stable handler ref + remove-before-add (same rationale as the PM5
+    // adapter: BluetoothDevice objects are reused across connect cycles).
+    this._onGattDisconnected ??= () => {
       for (const fn of this.listeners) fn({ ...this.live, disconnected: true, ts: Date.now() });
-    });
+    };
+    this.device.removeEventListener('gattserverdisconnected', this._onGattDisconnected);
+    this.device.addEventListener('gattserverdisconnected', this._onGattDisconnected);
   }
 
   async _subscribe(svc, uuid, handler) {
@@ -57,44 +61,58 @@ export class FTMSAdapter {
     ch.addEventListener('characteristicvaluechanged', (e) => handler(e.target.value));
   }
 
-  async disconnect() { try { this.device.gatt.disconnect(); } catch { /* gone */ } }
+  async disconnect() {
+    try { this.device.removeEventListener('gattserverdisconnected', this._onGattDisconnected); } catch { /* never fatal */ }
+    try { this.device.gatt.disconnect(); } catch { /* gone */ }
+  }
 
   // FTMS Rower Data (0x2AD1): flags-driven variable layout, little-endian.
+  // Wrapped in try/catch like the PM5 parsers' length guards: a truncated or
+  // malformed notification must never throw out of the event handler — the
+  // stream keeps its last good values and continues on the next packet.
   _parseRowerData(dv) {
-    const flags = dv.getUint16(0, true);
-    let o = 2;
-    if (!(flags & 0x0001)) { // More Data bit 0 == 0 → stroke rate + count present
-      this.live.strokeRate = dv.getUint8(o) / 2; o += 1;
-      this.live.strokeCount = dv.getUint16(o, true); o += 2;
-    }
-    if (flags & 0x0002) { o += 1; }                                   // avg stroke rate
-    if (flags & 0x0004) { this.live.distanceM = dv.getUint8(o) | (dv.getUint8(o + 1) << 8) | (dv.getUint8(o + 2) << 16); o += 3; }
-    if (flags & 0x0008) { const p = dv.getUint16(o, true); this.live.paceS = p || null; o += 2; }        // instantaneous pace, s/500m
-    if (flags & 0x0010) { const p = dv.getUint16(o, true); this.live.avgSplitS = p || null; o += 2; }    // average pace
-    if (flags & 0x0020) { this.live.watts = dv.getInt16(o, true); o += 2; }
-    if (flags & 0x0040) { o += 2; }                                   // avg power
-    if (flags & 0x0080) { o += 2; }                                   // resistance
-    if (flags & 0x0100) { this.live.calories = dv.getUint16(o, true); o += 5; } // energy triplet
-    if (flags & 0x0200) { this.live.heartRate = dv.getUint8(o) || null; o += 1; }
-    if (flags & 0x0800) { this.live.elapsedS = dv.getUint16(o, true); o += 2; }
-    this._emit();
+    try {
+      if (dv.byteLength < 2) return;
+      const flags = dv.getUint16(0, true);
+      let o = 2;
+      if (!(flags & 0x0001)) { // More Data bit 0 == 0 → stroke rate + count present
+        this.live.strokeRate = dv.getUint8(o) / 2; o += 1;
+        this.live.strokeCount = dv.getUint16(o, true); o += 2;
+      }
+      if (flags & 0x0002) { o += 1; }                                   // avg stroke rate
+      if (flags & 0x0004) { this.live.distanceM = dv.getUint8(o) | (dv.getUint8(o + 1) << 8) | (dv.getUint8(o + 2) << 16); o += 3; }
+      if (flags & 0x0008) { const p = dv.getUint16(o, true); this.live.paceS = p || null; o += 2; }        // instantaneous pace, s/500m
+      if (flags & 0x0010) { const p = dv.getUint16(o, true); this.live.avgSplitS = p || null; o += 2; }    // average pace
+      if (flags & 0x0020) { this.live.watts = dv.getInt16(o, true); o += 2; }
+      if (flags & 0x0040) { o += 2; }                                   // avg power
+      if (flags & 0x0080) { o += 2; }                                   // resistance
+      if (flags & 0x0100) { this.live.calories = dv.getUint16(o, true); o += 5; } // energy triplet
+      if (flags & 0x0200) { this.live.heartRate = dv.getUint8(o) || null; o += 1; }
+      if (flags & 0x0400) { o += 1; }                                   // metabolic equivalent (uint8)
+      if (flags & 0x0800) { this.live.elapsedS = dv.getUint16(o, true); o += 2; }
+      this._emit();
+    } catch { /* truncated packet — keep last good values */ }
   }
 
   _parseBikeData(dv) {
-    const flags = dv.getUint16(0, true);
-    let o = 2;
-    if (!(flags & 0x0001)) { this.live.speedKmh = dv.getUint16(o, true) / 100; o += 2; }
-    if (flags & 0x0002) { o += 2; }
-    if (flags & 0x0004) { this.live.cadence = dv.getUint16(o, true) / 2; o += 2; }
-    if (flags & 0x0008) { o += 2; }
-    if (flags & 0x0010) { this.live.distanceM = dv.getUint8(o) | (dv.getUint8(o + 1) << 8) | (dv.getUint8(o + 2) << 16); o += 3; }
-    if (flags & 0x0020) { o += 2; }
-    if (flags & 0x0040) { this.live.watts = dv.getInt16(o, true); o += 2; }
-    if (flags & 0x0080) { o += 2; }
-    if (flags & 0x0100) { this.live.calories = dv.getUint16(o, true); o += 5; }
-    if (flags & 0x0200) { this.live.heartRate = dv.getUint8(o) || null; o += 1; }
-    if (flags & 0x0800) { this.live.elapsedS = dv.getUint16(o, true); o += 2; }
-    this._emit();
+    try {
+      if (dv.byteLength < 2) return;
+      const flags = dv.getUint16(0, true);
+      let o = 2;
+      if (!(flags & 0x0001)) { this.live.speedKmh = dv.getUint16(o, true) / 100; o += 2; }
+      if (flags & 0x0002) { o += 2; }
+      if (flags & 0x0004) { this.live.cadence = dv.getUint16(o, true) / 2; o += 2; }
+      if (flags & 0x0008) { o += 2; }
+      if (flags & 0x0010) { this.live.distanceM = dv.getUint8(o) | (dv.getUint8(o + 1) << 8) | (dv.getUint8(o + 2) << 16); o += 3; }
+      if (flags & 0x0020) { o += 2; }
+      if (flags & 0x0040) { this.live.watts = dv.getInt16(o, true); o += 2; }
+      if (flags & 0x0080) { o += 2; }
+      if (flags & 0x0100) { this.live.calories = dv.getUint16(o, true); o += 5; }
+      if (flags & 0x0200) { this.live.heartRate = dv.getUint8(o) || null; o += 1; }
+      if (flags & 0x0400) { o += 1; }                                   // metabolic equivalent (uint8)
+      if (flags & 0x0800) { this.live.elapsedS = dv.getUint16(o, true); o += 2; }
+      this._emit();
+    } catch { /* truncated packet — keep last good values */ }
   }
 
   async sendWorkout() {

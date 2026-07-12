@@ -128,7 +128,12 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-#app { max-width: 1120px; margin: 0 auto; padding: 0 18px 96px; }
+#app {
+  max-width: 1120px; margin: 0 auto; padding: 0 18px 96px;
+  /* landscape notch clearance on edge-to-edge phones (viewport-fit=cover) */
+  padding-left: max(18px, env(safe-area-inset-left, 0px));
+  padding-right: max(18px, env(safe-area-inset-right, 0px));
+}
 /* page arrives — never simply appears */
 #page { animation: page-in .5s var(--ease) both; }
 @keyframes page-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
@@ -157,6 +162,8 @@ p { line-height: 1.58; }
 header.topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 4px 12px; position: sticky; top: 0; z-index: 30;
+  /* keep the bar clear of the iOS status bar / notch in standalone & native shells */
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
   background: linear-gradient(180deg, var(--bg) 60%, rgba(243,246,251,.72) 88%, transparent);
   backdrop-filter: saturate(150%) blur(8px);
 }
@@ -177,7 +184,8 @@ nav.tabs {
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 40;
   display: flex; justify-content: center; gap: 4px;
   background: var(--nav-bg); backdrop-filter: saturate(170%) blur(22px);
-  border-top: 1px solid var(--hairline); padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--hairline);
+  padding: 8px max(8px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
   box-shadow: 0 -10px 30px -20px rgba(22,50,100,.4);
 }
 nav.tabs a {
@@ -329,7 +337,7 @@ a.list-item:hover { background: var(--hover); }
 canvas.chart { width: 100%; height: auto; background: var(--chart-bg); border-radius: var(--radius-sm); border: 1px solid var(--border-soft); }
 
 /* ---------- toasts ---------- */
-#toasts { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 100; width: min(92vw, 440px); display: flex; flex-direction: column; gap: 9px; }
+#toasts { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 100; width: min(92vw, 440px); display: flex; flex-direction: column; gap: 9px; }
 .toast {
   background: var(--toast-bg); backdrop-filter: blur(14px) saturate(150%);
   border: 1px solid var(--hairline); border-left: 3px solid var(--accent); border-radius: var(--radius-sm);
@@ -463,7 +471,11 @@ canvas.chart { width: 100%; height: auto; background: var(--chart-bg); border-ra
 
 /* ---------- responsive ---------- */
 @media (max-width: 720px) {
-  #app { padding: 0 14px 92px; }
+  #app {
+    padding: 0 14px 92px;
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+    padding-right: max(14px, env(safe-area-inset-right, 0px));
+  }
   h1 { font-size: 1.58rem; }
   .metric.hero { grid-column: span 2; }
 }
