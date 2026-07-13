@@ -1,6 +1,7 @@
 // §1.3 — Workout builder with instant client-side validation mirroring PM5
 // limits (the machine's own validation stays authoritative at push time).
 import { toast, esc } from '../api.js';
+import { icon } from '../icons.js';
 
 // Mirror of server/ai/planValidation.js limits for instant feedback.
 const L = { minTimeS: 20, maxTimeS: 35999, minDistanceM: 100, maxDistanceM: 50000, maxIntervals: 30, maxRestS: 595 };
@@ -67,7 +68,7 @@ export function renderBuilder(el) {
     if (type === 'intervals') {
       tf.innerHTML = `${intervals.map((iv, i) => `
         <div class="card tight" data-iv="${i}">
-          <div class="row between"><strong>Interval ${i + 1}</strong>${intervals.length > 1 ? `<button class="ghost sm" data-del="${i}">✕</button>` : ''}</div>
+          <div class="row between"><strong>Interval ${i + 1}</strong>${intervals.length > 1 ? `<button class="ghost sm icon-btn" data-del="${i}" aria-label="Remove interval">${icon('close', { size: 15 })}</button>` : ''}</div>
           <div class="grid cols3">
             <label class="field"><span>Work by</span>
               <select data-f="workType" data-i="${i}">
@@ -105,7 +106,7 @@ export function renderBuilder(el) {
   function validateLive() {
     const v = validatePlanClient(currentPlan());
     el.querySelector('#valMsg').innerHTML = v.ok
-      ? `<div class="notice small">✓ Valid: ${esc(describePlanText(currentPlan()))}</div>`
+      ? `<div class="notice small"><span style="color:var(--good)">${icon('check', { size: 14 })}</span> Valid: ${esc(describePlanText(currentPlan()))}</div>`
       : `<div class="notice warn small">${esc(v.error)}</div>`;
     el.querySelector('#rowNow').disabled = !v.ok;
   }

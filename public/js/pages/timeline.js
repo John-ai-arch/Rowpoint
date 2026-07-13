@@ -2,9 +2,11 @@
 // progress — first row, distance milestones, PRs, achievements, and training
 // plans — merged chronologically from /api/me/timeline (existing data only).
 import { api, esc, fmtDate } from '../api.js';
+import { icon } from '../icons.js';
 import { t } from '../i18n.js';
 
 const TYPE_COLOR = { achievement: '#eab308', pr: '#38bdf8', milestone: '#10b981', plan: '#a855f7', workout: '#6d7bf6' };
+const TYPE_ICON = { achievement: 'medal', pr: 'bolt', milestone: 'droplet', plan: 'calendar', workout: 'oar' };
 
 export async function renderTimeline(el) {
   el.innerHTML = `<div class="card"><div class="skeleton" style="height:120px"></div></div>`;
@@ -14,8 +16,8 @@ export async function renderTimeline(el) {
 
   if (!timeline.length) {
     el.innerHTML = `<header class="mb"><h1>${esc(t('timeline.title'))}</h1></header>
-      <div class="card"><div class="empty"><span class="ic" aria-hidden="true">📈</span>
-        <h3>${esc(t('timeline.empty'))}</h3><a class="btn mt" href="#/row">${esc(t('timeline.startRowing'))}</a></div></div>`;
+      <div class="card"><div class="empty"><div class="center" style="margin-bottom:12px"><span class="icon-chip lg">${icon('progress')}</span></div>
+        <h3>${esc(t('timeline.empty'))}</h3><a class="btn mt" href="#/row">${icon('oar', { size: 17 })} ${esc(t('timeline.startRowing'))}</a></div></div>`;
     return;
   }
 
@@ -37,7 +39,7 @@ export async function renderTimeline(el) {
 function eventRow(e) {
   const c = TYPE_COLOR[e.type] || 'var(--accent)';
   return `<div style="display:flex;gap:12px;padding:8px 0;position:relative">
-    <div style="flex:0 0 auto;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${c}22;border:1px solid ${c}55;font-size:1rem">${e.icon || '•'}</div>
+    <div style="flex:0 0 auto;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${c}22;border:1px solid ${c}55;color:${c}">${icon(TYPE_ICON[e.type] || 'dot', { size: 18 })}</div>
     <div style="flex:1;min-width:0">
       <strong>${esc(e.title)}</strong>
       <div class="muted small">${esc(e.detail || '')} · ${esc(fmtDate(e.at))}</div>

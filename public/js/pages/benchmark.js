@@ -3,6 +3,7 @@
 // volume) and see the resulting benchmark distributions + observational
 // insights. Reuses the Observatory aggregation engine — /api/observatory/benchmark.
 import { api, esc, fmtDistance, fmtDuration } from '../api.js';
+import { icon } from '../icons.js';
 import { t } from '../i18n.js';
 import { drawDistribution } from '../components/charts.js';
 
@@ -49,11 +50,11 @@ function draw(el, bm) {
       <p class="muted small mt"><span class="badge ${conf}">${esc(t('obs.confidence_' + bm.confidence))}</span> ${esc(t('bench.cohort', { n: bm.cohortSize, total: bm.populationSize }))}</p>
     </div>
 
-    ${!bm.enoughData ? `<div class="card"><div class="empty"><span class="ic">🔎</span>
+    ${!bm.enoughData ? `<div class="card"><div class="empty"><div class="center" style="margin-bottom:12px"><span class="icon-chip lg">${icon('search')}</span></div>
         <h3>${esc(t('bench.narrow'))}</h3><p class="muted small">${esc(t('obs.buildingNote', { n: bm.minCohort }))}</p></div></div>`
     : `
-      ${bm.insights.length ? `<div class="card"><h3>${esc(t('bench.insights'))}</h3>
-        ${bm.insights.map(i => `<div class="small" style="display:flex;gap:8px;margin:6px 0"><span>📊</span><span>${esc(i)}</span></div>`).join('')}
+      ${bm.insights.length ? `<div class="card"><div class="card-head"><span class="icon-chip sm">${icon('lightbulb', { size: 18 })}</span><h3>${esc(t('bench.insights'))}</h3></div>
+        ${bm.insights.map(i => `<div class="small" style="display:flex;gap:8px;margin:6px 0;align-items:flex-start"><span style="color:var(--accent2);flex:none">${icon('activity', { size: 15 })}</span><span>${esc(i)}</span></div>`).join('')}
       </div>` : ''}
       <div class="grid cols2">
         ${ORDER.filter(k => bm.metrics[k]?.quantiles).map(k => card(k, bm.metrics[k])).join('')}

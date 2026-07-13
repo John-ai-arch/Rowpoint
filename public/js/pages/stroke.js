@@ -4,6 +4,7 @@
 // explicit confidence. Coaches and athletes annotate; two analyses compare over
 // time. Video bytes stay client-side (object URL); the analysis is what's saved.
 import { api, state, toast, esc, fmtDate } from '../api.js';
+import { icon } from '../icons.js';
 import { confirmDialog } from '../components/dialog.js';
 import { t } from '../i18n.js';
 
@@ -26,12 +27,12 @@ function drawList(el, analyses, modules) {
       </div>
     </header>
     <div id="host"></div>
-    ${analyses.length ? analyses.map(cardHtml).join('') : `<div class="card"><div class="empty"><span class="ic">🎥</span><h3>${esc(t('stroke.empty'))}</h3></div></div>`}
+    ${analyses.length ? analyses.map(cardHtml).join('') : `<div class="card"><div class="empty"><div class="center" style="margin-bottom:12px"><span class="icon-chip lg">${icon('video')}</span></div><h3>${esc(t('stroke.empty'))}</h3></div></div>`}
     <div class="card"><details><summary class="small muted">${esc(t('stroke.howItWorks'))}</summary>
       <p class="small muted mt">${esc(t('stroke.pipelineNote'))}</p>
       <div class="grid cols2" style="gap:6px">
         ${modules.map(m => `<div class="small" style="display:flex;align-items:center;gap:6px">
-          <span>${m.available ? '✅' : '🕓'}</span><span>${esc(m.name)}${m.available ? '' : ` <span class="muted">(${esc(t('stroke.roadmap'))})</span>`}</span></div>`).join('')}
+          <span style="color:${m.available ? 'var(--good)' : 'var(--faint)'};flex:none">${icon(m.available ? 'check-circle' : 'timer', { size: 15 })}</span><span>${esc(m.name)}${m.available ? '' : ` <span class="muted">(${esc(t('stroke.roadmap'))})</span>`}</span></div>`).join('')}
       </div></details></div>`;
 
   el.querySelector('#newBtn').onclick = () => renderRecorder(el);
@@ -49,7 +50,7 @@ function cardHtml(a) {
     <div class="row" style="justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px">
       <strong>${esc(a.title)}</strong>
       <span class="row" style="gap:4px"><button class="ghost sm" data-open="${esc(a.id)}">${esc(t('stroke.openBtn'))}</button>
-        <button class="ghost sm" data-del="${esc(a.id)}">✕</button></span>
+        <button class="ghost sm icon-btn" data-del="${esc(a.id)}" aria-label="${esc(t('common.delete') || 'Delete')}">${icon('close', { size: 15 })}</button></span>
     </div>
     <div class="muted small">${esc(t('stroke.kind_' + a.kind))} · ${fmtDate(a.createdAt)}</div>
     <div class="row mt" style="gap:14px;flex-wrap:wrap">
@@ -74,9 +75,9 @@ function renderRecorder(el) {
     <div id="markUi" style="display:none">
       <p class="muted small mt">${esc(t('stroke.markHint'))}</p>
       <div class="row" style="gap:8px;flex-wrap:wrap">
-        <button class="secondary" id="catchBtn">⛳ ${esc(t('stroke.catch'))} <span id="catchN">0</span></button>
-        <button class="secondary" id="finishBtn">🏁 ${esc(t('stroke.finish'))} <span id="finishN">0</span></button>
-        <button class="ghost sm" id="undoBtn">↶ ${esc(t('stroke.undo'))}</button>
+        <button class="secondary" id="catchBtn">${icon('target', { size: 16 })} ${esc(t('stroke.catch'))} <span id="catchN">0</span></button>
+        <button class="secondary" id="finishBtn">${icon('flag', { size: 16 })} ${esc(t('stroke.finish'))} <span id="finishN">0</span></button>
+        <button class="ghost sm" id="undoBtn">${icon('undo', { size: 15 })} ${esc(t('stroke.undo'))}</button>
       </div>
       <div class="grid cols2 mt">
         <label class="field"><span>${esc(t('stroke.aTitle'))}</span><input id="aTitle" placeholder="${esc(t('stroke.aTitlePh'))}"></label>
@@ -125,8 +126,8 @@ async function renderDetail(el, id) {
 
   el.innerHTML = `
     <div class="row mb" style="justify-content:space-between;align-items:center">
-      <button class="ghost sm" id="back">← ${esc(t('stroke.back'))}</button>
-      <button class="ghost sm" id="del">✕ ${esc(t('stroke.delete'))}</button>
+      <button class="ghost sm" id="back">${icon('chevron-left', { size: 15 })} ${esc(t('stroke.back'))}</button>
+      <button class="ghost sm" id="del">${icon('close', { size: 15 })} ${esc(t('stroke.delete'))}</button>
     </div>
     <header class="mb"><h1>${esc(a.title)}</h1><p class="muted">${esc(t('stroke.kind_' + a.kind))} · ${fmtDate(a.createdAt)} · ${esc(t('stroke.pipeline'))} v${esc(a.pipelineVersion || '1.0')}</p></header>
 
@@ -179,7 +180,7 @@ async function renderDetail(el, id) {
 
 function annotationsHtml(anns) {
   if (!anns.length) return `<p class="muted small">${esc(t('stroke.noAnn'))}</p>`;
-  return anns.map(a => `<div class="list-item"><div class="avatar" aria-hidden="true">${a.role === 'coach' ? '🧑‍🏫' : '💬'}</div>
+  return anns.map(a => `<div class="list-item"><span class="li-icon ${a.role === 'coach' ? 'accent' : ''}">${icon(a.role === 'coach' ? 'user' : 'comment', { size: 20 })}</span>
     <div><div class="small">${esc(a.body)}</div><div class="muted" style="font-size:.7rem">${esc(a.author)}${a.tSeconds != null ? ` · @${a.tSeconds}s` : ''}</div></div></div>`).join('');
 }
 
@@ -195,4 +196,7 @@ function compareHtml(a, b) {
   </tbody></table><p class="muted small">${esc(t('stroke.compareNote'))}</p>`;
 }
 
-const confIcon = (c) => (c >= 0.75 ? '🟢' : c >= 0.55 ? '🟡' : '🟠');
+const confIcon = (c) => {
+  const color = c >= 0.75 ? 'var(--good)' : c >= 0.55 ? 'var(--warn)' : 'var(--bad)';
+  return `<span style="color:${color}">${icon('dot', { size: 12 })}</span>`;
+};

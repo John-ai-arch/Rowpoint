@@ -3,6 +3,7 @@
 // live leaderboard, then offline-first save with AI pacing feedback.
 import { api, state, toast, esc, fmtSplit, fmtDuration, uuidv4 } from '../api.js';
 import { t } from '../i18n.js';
+import { icon } from '../icons.js';
 import { celebrate } from '../celebrate.js';
 import { ergManager, ConnState } from '../ble/ergSource.js';
 import { hrManager, SensorState } from '../ble/sensors.js';
@@ -97,7 +98,7 @@ export async function renderRow(el) {
       const errBox = el.querySelector('#connError');
       if (!btAvailable && errBox && !errBox.dataset.btHelp) { errBox.innerHTML = bluetoothHelpHtml({ showSimulator: true }); errBox.dataset.btHelp = '1'; }
       c.innerHTML = `
-        ${canSilent ? `<button class="sm secondary" id="reconnectBtn">↻ ${esc(remembered.name || 'Last machine')}</button>` : ''}
+        ${canSilent ? `<button class="sm secondary" id="reconnectBtn">${icon('refresh', { size: 15 })} ${esc(remembered.name || 'Last machine')}</button>` : ''}
         ${btAvailable ? `<button class="sm" id="connectBtn">${esc(t('ble.connectErg'))}</button>` : ''}
         <button class="sm secondary" id="simBtn">${esc(t('ble.simulator'))}</button>`;
       el.querySelector('#reconnectBtn')?.addEventListener('click', async () => {
@@ -139,7 +140,7 @@ export async function renderRow(el) {
       if (plan) await pushPlan(false);
       if (session.channel) joinLive();
       if (adapter.kind === 'simulator') {
-        el.querySelector('#connError').innerHTML = `<div class="mt"><button id="simStart">▶ Start simulated rowing</button></div>`;
+        el.querySelector('#connError').innerHTML = `<div class="mt"><button id="simStart">${icon('play', { size: 16 })} Start simulated rowing</button></div>`;
         el.querySelector('#simStart').onclick = () => { adapter.start(); el.querySelector('#simStart').remove(); };
       }
       connButtons();
@@ -160,7 +161,7 @@ export async function renderRow(el) {
     if (!session.adapter) { if (manual) toast('Connect to a machine first.', 'error'); return; }
     try {
       await session.adapter.sendWorkout(plan);
-      box.innerHTML = `<div class="notice mt">✓ Workout programmed on the monitor. ${session.adapter.kind === 'pm5' ? 'Press start on the PM5 or just row.' : ''}</div>`;
+      box.innerHTML = `<div class="notice mt"><span style="color:var(--good)">${icon('check', { size: 15 })}</span> Workout programmed on the monitor. ${session.adapter.kind === 'pm5' ? 'Press start on the PM5 or just row.' : ''}</div>`;
     } catch (e) {
       // The machine's own validation is authoritative (§1.3) — show its words.
       box.innerHTML = `<div class="notice warn mt"><strong>${e.machineRejection ? 'The monitor rejected this workout' : 'Couldn\'t program the monitor'}</strong><br>${esc(e.message)}</div>`;
@@ -180,17 +181,21 @@ export async function renderRow(el) {
         <div class="metric"><div class="val" id="mStrokes">0</div><div class="lbl">strokes</div></div>
       </div>
       <div class="card tight mt">
-        <div class="row between"><h3>Stroke force curve</h3>
-          <button class="ghost sm" id="hrBtn">${hrManager.state === SensorState.CONNECTED ? '❤ HR monitor ✓' : '+ HR monitor'}</button></div>
+        <div class="card-head"><span class="icon-chip sm">${icon('activity', { size: 18 })}</span><h3>Stroke force curve</h3>
+          <button class="ghost sm card-head-action" id="hrBtn">${hrBtnLabel(hrManager.state === SensorState.CONNECTED)}</button></div>
         <canvas class="chart" id="forceCanvas" height="170"></canvas>
         <p class="muted small">Live per-stroke force shape (current vs. previous stroke) — data the monitor never shows you.</p>
       </div>
       <div class="row mt">
-        <button id="finishBtn" style="flex:1">■ Finish & save workout</button>
+        <button id="finishBtn" style="flex:1">${icon('check', { size: 18 })} Finish & save workout</button>
       </div>`;
     el.querySelector('#hrBtn').onclick = connectHr;
     el.querySelector('#finishBtn').onclick = () => finish();
   }
+
+  const hrBtnLabel = (connected) => connected
+    ? `${icon('pulse', { size: 16 })} HR monitor ${icon('check', { size: 15 })}`
+    : `${icon('plus', { size: 16 })} HR monitor`;
 
   async function connectHr() {
     // §1.6: prefer the machine's HR relay when present; the HR-monitor
@@ -200,7 +205,7 @@ export async function renderRow(el) {
     try {
       const info = await hrManager.connect();
       toast(`Connected to ${info.name}.`, 'success');
-      el.querySelector('#hrBtn').textContent = '❤ HR monitor ✓';
+      el.querySelector('#hrBtn').innerHTML = hrBtnLabel(true);
     } catch (e) {
       toast(e.message, 'error', 6000);
     }
@@ -296,7 +301,7 @@ export async function renderRow(el) {
     const rows = [...session.liveEntries.entries()].filter(([uid]) => uid !== state.user.id).map(([, v]) => v).concat(session.started || session.last ? [me] : []);
     const ranked = rows.filter(r => Number.isFinite(r.avgSplitS)).sort((a, b) => (b.finished - a.finished) || (a.avgSplitS - b.avgSplitS));
     if (!ranked.length) { area.innerHTML = ''; return; }
-    area.innerHTML = `<div class="card tight"><h3>Live leaderboard <span class="muted small">lowest average split</span></h3>
+    area.innerHTML = `<div class="card tight"><div class="card-head"><span class="icon-chip sm gold">${icon('trophy', { size: 18 })}</span><h3>Live leaderboard <span class="muted small" style="font-weight:500">lowest average split</span></h3></div>
       ${ranked.map((r, i) => `<div class="lb-row ${i === 0 ? 'first' : ''}">
         <span class="lb-rank">${i + 1}</span>
         <span>${esc(r.displayName)} ${r.finished ? '<span class="badge green">finished</span>' : '<span class="badge blue">rowing</span>'}${r.stale ? ' <span class="badge gray">stale</span>' : ''}</span>
@@ -369,7 +374,7 @@ export async function renderRow(el) {
     if (session.channel) publishMetrics(session.channel, { distanceM: m.distanceM, elapsedS: m.elapsedS, avgSplitS: m.avgSplitS, finished: true });
 
     const after = el.querySelector('#afterArea');
-    after.innerHTML = `<div class="card"><h3>Saved ✓</h3><p class="muted small">Workout stored locally. Syncing…</p></div>`;
+    after.innerHTML = `<div class="card"><div class="card-head"><span class="icon-chip sm good">${icon('check', { size: 18 })}</span><h3>Saved</h3></div><p class="muted small" style="margin:0">Workout stored locally. Syncing…</p></div>`;
     try {
       const res = await api('/workouts/sync', { method: 'POST', body: payload });
       dropQueued(payload.id); // direct sync succeeded — no queue replay needed
@@ -377,7 +382,8 @@ export async function renderRow(el) {
       // an in-card banner). No-op when nothing new was earned.
       const badgeBanner = celebrate(res.newBadges);
       after.innerHTML = `<div class="card ai-card">
-        <div class="row between"><h3>Workout saved</h3><span class="ai-tag">✨ AI-generated feedback</span></div>
+        <div class="card-head"><span class="icon-chip sm">${icon('sparkle', { size: 18 })}</span><h3>Workout saved</h3>
+          <span class="ai-tag card-head-action">${icon('sparkle', { size: 13 })} AI-generated feedback</span></div>
         ${res.newPb ? `<p><span class="badge green">New verified 2k PB!</span></p>` : ''}
         <p>${esc(res.aiFeedback?.text || '')}</p>
         ${badgeBanner}
@@ -388,8 +394,8 @@ export async function renderRow(el) {
         </div></div>`;
       if (res.research?.contributed) toast('Anonymized data contributed to research — thank you! (Opt out anytime in Settings.)', 'info', 5000);
     } catch (e) {
-      after.innerHTML = `<div class="card"><h3>Saved locally ✓</h3>
-        <p class="muted small">${e.code === 'email_unverified'
+      after.innerHTML = `<div class="card"><div class="card-head"><span class="icon-chip sm good">${icon('check', { size: 18 })}</span><h3>Saved locally</h3></div>
+        <p class="muted small" style="margin:0">${e.code === 'email_unverified'
     ? 'Cloud sync is waiting for email verification — the workout is safe on this device and will sync automatically once you verify.'
     : `Will sync automatically when you're back online. (${esc(e.message)})`}</p></div>`;
       syncPending();

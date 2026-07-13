@@ -4,6 +4,7 @@
 // fields via the standard /users/me PATCH — no new subsystem.
 import { api, state, toast, esc, fmtDistance, fmtSplit, fmtDuration, fmtDate } from '../api.js';
 import { t } from '../i18n.js';
+import { icon, badgeIcon } from '../icons.js';
 import { drawTrend } from '../components/charts.js';
 
 export async function renderProgress(el) {
@@ -21,9 +22,9 @@ export async function renderProgress(el) {
     el.innerHTML = `
       <header class="mb"><h1>${esc(t('progress.title'))}</h1></header>
       <div class="card"><div class="empty">
-        <span class="ic" aria-hidden="true">🚣</span>
+        <div class="center" style="margin-bottom:14px"><span class="icon-chip lg">${icon('oar')}</span></div>
         <h3>${esc(t('progress.empty'))}</h3>
-        <a class="btn mt" href="#/row">${esc(t('progress.startRowing'))}</a>
+        <a class="btn mt" href="#/row">${icon('oar', { size: 17 })} ${esc(t('progress.startRowing'))}</a>
       </div></div>`;
     return;
   }
@@ -39,14 +40,14 @@ export async function renderProgress(el) {
       <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
         <div><h1>${esc(t('progress.title'))}</h1>
           <p class="muted">${esc(t('progress.subtitle'))}</p></div>
-        <span class="row" style="gap:6px;flex-wrap:wrap"><a class="btn secondary sm" href="#/observatory">🌍 ${esc(t('obs.open'))}</a>
-        <a class="btn secondary sm" href="#/timeline">📈 ${esc(t('timeline.open'))}</a>
-        <a class="btn secondary sm" href="#/lab">🔬 ${esc(t('lab.open'))}</a>
-        <a class="btn secondary sm" href="#/athlete">🧬 ${esc(t('twin.open'))}</a>
-        <a class="btn secondary sm" href="#/optimizer">♟ ${esc(t('opt.open'))}</a>
-        <a class="btn secondary sm" href="#/racelab">🏁 ${esc(t('race.open'))}</a>
-        <a class="btn secondary sm" href="#/stroke">🎥 ${esc(t('stroke.open'))}</a>
-        <a class="btn secondary sm" href="#/plan">🗓 ${esc(t('plan.open'))}</a></span>
+        <span class="row" style="gap:6px;flex-wrap:wrap"><a class="btn secondary sm" href="#/observatory">${icon('globe', { size: 16 })} ${esc(t('obs.open'))}</a>
+        <a class="btn secondary sm" href="#/timeline">${icon('progress', { size: 16 })} ${esc(t('timeline.open'))}</a>
+        <a class="btn secondary sm" href="#/lab">${icon('lightbulb', { size: 16 })} ${esc(t('lab.open'))}</a>
+        <a class="btn secondary sm" href="#/athlete">${icon('user', { size: 16 })} ${esc(t('twin.open'))}</a>
+        <a class="btn secondary sm" href="#/optimizer">${icon('target', { size: 16 })} ${esc(t('opt.open'))}</a>
+        <a class="btn secondary sm" href="#/racelab">${icon('flag', { size: 16 })} ${esc(t('race.open'))}</a>
+        <a class="btn secondary sm" href="#/stroke">${icon('eye', { size: 16 })} ${esc(t('stroke.open'))}</a>
+        <a class="btn secondary sm" href="#/plan">${icon('calendar', { size: 16 })} ${esc(t('plan.open'))}</a></span>
       </div>
     </header>
 
@@ -60,7 +61,7 @@ export async function renderProgress(el) {
 
     <div class="grid cols2">
       <div class="card">
-        <h3>${esc(t('progress.weeklyGoal'))}</h3>
+        <div class="card-head"><span class="icon-chip sm">${icon('target', { size: 18 })}</span><h3>${esc(t('progress.weeklyGoal'))}</h3></div>
         <div class="row" style="justify-content:center;gap:22px;flex-wrap:wrap">
           ${ringHtml(goalPct, fmtDistance(weekMeters), t('progress.ofGoal'))}
           <div style="min-width:150px">
@@ -72,9 +73,9 @@ export async function renderProgress(el) {
       </div>
 
       <div class="card">
-        <h3>${esc(t('progress.currentStreak'))}</h3>
+        <div class="card-head"><span class="icon-chip sm gold">${icon('flame', { size: 18 })}</span><h3>${esc(t('progress.currentStreak'))}</h3></div>
         <div class="streak-hero">
-          <span class="flame" aria-hidden="true">🔥</span>
+          <span class="icon-chip lg gold">${icon('flame', { size: 26 })}</span>
           <div>
             <div class="stat-tile tight" style="text-align:left;background:none;border:none;padding:0">
               <div class="n">${data.streak.current}</div>
@@ -96,7 +97,7 @@ export async function renderProgress(el) {
     </div>
 
     <div class="card">
-      <h3>${esc(t('progress.records'))}</h3>
+      <div class="card-head"><span class="icon-chip sm gold">${icon('trophy', { size: 18 })}</span><h3>${esc(t('progress.records'))}</h3></div>
       <div class="grid cols3">
         ${prCard(t('progress.best2k'), data.records.best2k && fmtDuration(data.records.best2k.timeS), data.records.best2k && fmtDate(data.records.best2k.at))}
         ${prCard(t('progress.best5k'), data.records.best5k && fmtDuration(data.records.best5k.timeS), data.records.best5k && fmtDate(data.records.best5k.at))}
@@ -113,12 +114,12 @@ export async function renderProgress(el) {
     </div>
 
     <div class="card">
-      <div class="row between"><h3>${esc(t('progress.achievements'))}</h3>
-        <span class="badge blue">${esc(t('progress.achievementsUnlocked', { n: data.badgeCount.unlocked, total: data.badgeCount.total }))}</span></div>
+      <div class="card-head"><span class="icon-chip sm">${icon('medal', { size: 18 })}</span><h3>${esc(t('progress.achievements'))}</h3>
+        <span class="badge blue card-head-action">${esc(t('progress.achievementsUnlocked', { n: data.badgeCount.unlocked, total: data.badgeCount.total }))}</span></div>
       <div class="ach-grid mt">
         ${data.badges.map(b => `
           <div class="ach ${b.unlocked ? 'unlocked' : 'locked'}" title="${b.unlocked ? esc(fmtDate(b.achievedAt)) : esc(t('achievements.locked'))}">
-            <span class="ic" aria-hidden="true">${b.unlocked ? b.icon : '🔒'}</span>
+            <span class="ic" aria-hidden="true">${b.unlocked ? icon(badgeIcon(b.badge), { size: 30 }) : icon('lock', { size: 28 })}</span>
             <div class="nm">${esc(t('achievements.' + b.badge))}</div>
             ${b.unlocked ? `<div class="dt">${esc(fmtDate(b.achievedAt))}</div>` : ''}
           </div>`).join('')}
@@ -223,7 +224,7 @@ function perfHtml(perf) {
         <details><summary class="small muted">${esc(t('perf.howCalculated'))}</summary>
           <p class="small muted">${esc(t('perf.basedOn'))}: ${pr.basis.map(esc).join('; ')}.<br>${esc(pr.method)}</p></details>
         <p class="muted" style="font-size:.68rem">${esc(pr.disclaimer)}</p>`
-    : `<div class="empty"><span class="ic" aria-hidden="true">📈</span><p class="muted small">${esc(pr.reason)}</p></div>`}
+    : `<div class="empty"><div class="center" style="margin-bottom:10px"><span class="icon-chip plain">${icon('activity')}</span></div><p class="muted small">${esc(pr.reason)}</p></div>`}
     </div>
   </div>`;
 }
@@ -235,8 +236,8 @@ function communityChip(pop) {
   const msg = pct >= 50
     ? t('progress.communityTop', { pct: Math.max(1, 100 - pct) })
     : t('progress.communityAhead', { pct });
-  return `<a href="#/observatory" class="notice" style="display:flex;align-items:center;gap:8px;text-decoration:none;margin-bottom:14px">
-    🌍 <span>${esc(msg)} <span class="muted small">${esc(t('progress.communityCta'))}</span></span></a>`;
+  return `<a href="#/observatory" class="notice" style="display:flex;align-items:center;gap:10px;text-decoration:none;margin-bottom:14px">
+    <span style="color:var(--accent2);flex:none">${icon('globe', { size: 20 })}</span><span>${esc(msg)} <span class="muted small">${esc(t('progress.communityCta'))}</span></span></a>`;
 }
 
 /* Living goals: each shows progress, a projected outcome, and an ETA. */
@@ -292,7 +293,7 @@ function insightHtml(data, remaining, goalPct) {
   else if (data.streak.current >= 2) msg = t('progress.streakAlive', { n: data.streak.current });
   else if (data.week.workouts === 1) msg = t('progress.firstOfWeek');
   else msg = t('progress.keepGoing', { remaining: fmtDistance(remaining) });
-  return `<div class="card ai-card"><span class="ai-tag">✨ ${esc(t('progress.insight'))}</span>
+  return `<div class="card ai-card"><span class="ai-tag">${icon('sparkle', { size: 13 })} ${esc(t('progress.insight'))}</span>
     <p style="margin:6px 0 0;font-size:1.05rem">${esc(msg)}</p></div>`;
 }
 

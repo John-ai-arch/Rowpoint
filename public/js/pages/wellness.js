@@ -1,5 +1,6 @@
 // §12 — Daily wellness check-in (<30s, same-day edits) + 7/30-day trends.
 import { api, state, toast, esc } from '../api.js';
+import { icon } from '../icons.js';
 import { drawTrend } from '../components/charts.js';
 
 export async function renderWellness(el) {
@@ -7,7 +8,7 @@ export async function renderWellness(el) {
   try { ({ checkin: today } = await api('/wellness/today')); } catch { /* offline */ }
 
   const v = (f, d) => today?.[f] ?? d;
-  el.innerHTML = `<h1>Daily check-in</h1>
+  el.innerHTML = `<div class="page-head"><p class="eyebrow">${icon('droplet', { size: 14 })} Wellness</p><h1>Daily check-in</h1></div>
     ${today ? `<div class="notice mb">You've already checked in today — editing updates the same entry, no duplicates.</div>` : ''}
     <div class="card">
       <label class="field"><span>Sleep last night: <strong id="sleepVal">${v('sleep_hours', 7.5)}</strong> hours</span>
@@ -20,8 +21,8 @@ export async function renderWellness(el) {
       <button id="save" style="width:100%">${today ? 'Update today\'s check-in' : 'Save check-in'}</button>
       ${state.user.researchOptIn ? `<p class="muted small mt">Check-ins follow the same single research toggle as workouts — you're currently contributing (change anytime in Settings).</p>` : ''}
     </div>
-    <div class="card"><div class="row between"><h3>Trends</h3>
-      <div class="seg" style="max-width:160px"><button id="d7">7d</button><button id="d30" class="on">30d</button></div></div>
+    <div class="card"><div class="card-head"><span class="icon-chip sm">${icon('activity', { size: 18 })}</span><h3>Trends</h3>
+      <div class="seg card-head-action" style="max-width:160px"><button id="d7">7d</button><button id="d30" class="on">30d</button></div></div>
       <canvas class="chart" id="trendChart"></canvas>
       <p class="muted small">Sleep hours (blue), soreness 1–5 (amber), stress 1–5 (red). Trends matter more than any single day.</p>
       <div id="notesLog"></div>

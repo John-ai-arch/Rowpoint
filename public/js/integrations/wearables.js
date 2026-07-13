@@ -38,12 +38,15 @@ export function listWearableSources() { return [...registry.values()]; }
 // The roadmap the interface is designed to accept. `status: 'planned'` is the
 // honest truth today — none are wired, but each maps cleanly onto WearableSource
 // so adding one is an adapter, not a rewrite.
+// `icon` is a RowPoint icon-set name (see public/js/icons.js), not a brand
+// logo — we deliberately don't ship third-party marks. The UI renders it via
+// icon(p.icon).
 export const WEARABLE_PROVIDERS = [
-  { id: 'apple_watch', name: 'Apple Watch', icon: '⌚', capabilities: ['heart rate', 'workouts', 'HRV'], status: 'planned' },
-  { id: 'healthkit', name: 'Apple Health (HealthKit)', icon: '❤️', capabilities: ['workouts', 'resting HR', 'sleep'], status: 'planned' },
-  { id: 'garmin', name: 'Garmin Connect', icon: '🛰️', capabilities: ['workouts', 'HRV', 'body battery'], status: 'planned' },
-  { id: 'whoop', name: 'WHOOP', icon: '🟥', capabilities: ['recovery', 'strain', 'sleep', 'HRV'], status: 'planned' },
-  { id: 'polar', name: 'Polar Flow', icon: '🔵', capabilities: ['heart rate', 'workouts', 'recovery'], status: 'planned' },
-  { id: 'concept2', name: 'Concept2 Logbook', icon: '🚣', capabilities: ['erg workouts', 'rankings'], status: 'planned' },
-  { id: 'health_connect', name: 'Google Health Connect', icon: '🟢', capabilities: ['workouts', 'heart rate', 'sleep'], status: 'planned' },
+  { id: 'apple_watch', name: 'Apple Watch', icon: 'watch', capabilities: ['heart rate', 'workouts', 'HRV'], status: 'planned' },
+  { id: 'healthkit', name: 'Apple Health (HealthKit)', icon: 'heart', capabilities: ['workouts', 'resting HR', 'sleep'], status: 'planned' },
+  { id: 'garmin', name: 'Garmin Connect', icon: 'activity', capabilities: ['workouts', 'HRV', 'body battery'], status: 'planned' },
+  { id: 'whoop', name: 'WHOOP', icon: 'pulse', capabilities: ['recovery', 'strain', 'sleep', 'HRV'], status: 'planned' },
+  { id: 'polar', name: 'Polar Flow', icon: 'heart', capabilities: ['heart rate', 'workouts', 'recovery'], status: 'planned' },
+  { id: 'concept2', name: 'Concept2 Logbook', icon: 'oar', capabilities: ['erg workouts', 'rankings'], status: 'planned' },
+  { id: 'health_connect', name: 'Google Health Connect', icon: 'activity', capabilities: ['workouts', 'heart rate', 'sleep'], status: 'planned' },
 ];

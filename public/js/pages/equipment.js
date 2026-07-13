@@ -3,10 +3,11 @@
 // /api/equipment.
 import { api, toast, esc, fmtDistance, fmtDate } from '../api.js';
 import { confirmDialog } from '../components/dialog.js';
+import { icon } from '../icons.js';
 import { t } from '../i18n.js';
 
 const TYPES = ['erg', 'hrm', 'boat', 'oars', 'shoes', 'other'];
-const ICON = { erg: '🚣', hrm: '❤️', boat: '⛵', oars: '🎣', shoes: '👟', other: '🔧' };
+const TYPE_ICON = { erg: 'oar', hrm: 'pulse', boat: 'boat', oars: 'oar', shoes: 'shoe', other: 'wrench' };
 let editing = null; // equipment id being edited, or 'new', or null
 
 export async function renderEquipment(el) {
@@ -23,17 +24,17 @@ function draw(el, data) {
   el.innerHTML = `
     <header class="mb">
       <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
-        <div><h1>${esc(t('equip.title'))}</h1><p class="muted">${esc(t('equip.subtitle'))}</p></div>
-        <button id="addBtn">${esc(t('equip.add'))}</button>
+        <div class="page-head"><h1>${esc(t('equip.title'))}</h1><p class="muted">${esc(t('equip.subtitle'))}</p></div>
+        <button id="addBtn">${icon('plus', { size: 16 })} ${esc(t('equip.add'))}</button>
       </div>
     </header>
     <div id="formHost"></div>
     ${items.length ? TYPES.filter(ty => items.some(i => i.type === ty)).map(ty => `
       <div class="card">
-        <h3>${ICON[ty]} ${esc(t('equip.type_' + ty))}</h3>
+        <div class="card-head"><span class="icon-chip sm">${icon(TYPE_ICON[ty], { size: 18 })}</span><h3>${esc(t('equip.type_' + ty))}</h3></div>
         ${items.filter(i => i.type === ty).map(itemHtml).join('')}
-      </div>`).join('') : `<div class="card"><div class="empty"><span class="ic">🧰</span><h3>${esc(t('equip.empty'))}</h3></div></div>`}
-    ${usage.length ? `<div class="card"><h3>${esc(t('equip.usage'))}</h3>
+      </div>`).join('') : `<div class="card"><div class="empty"><div class="center" style="margin-bottom:12px"><span class="icon-chip lg">${icon('wrench')}</span></div><h3>${esc(t('equip.empty'))}</h3></div></div>`}
+    ${usage.length ? `<div class="card"><div class="card-head"><span class="icon-chip sm">${icon('activity', { size: 18 })}</span><h3>${esc(t('equip.usage'))}</h3></div>
       <table><thead><tr><th>${esc(t('equip.machine'))}</th><th>${esc(t('equip.meters'))}</th><th>${esc(t('equip.sessions'))}</th><th>${esc(t('equip.lastUsed'))}</th></tr></thead><tbody>
       ${usage.map(m => `<tr><td class="small"><code>${esc((m.machineId || '').slice(0, 16))}</code> ${esc(m.machineType || '')}</td>
         <td>${fmtDistance(m.meters)}</td><td>${m.sessions}</td><td class="small muted">${fmtDate(m.lastUsed)}</td></tr>`).join('')}
@@ -61,13 +62,13 @@ function itemHtml(i) {
   return `<div class="list-item" style="align-items:flex-start">
     <div style="flex:1">
       <strong>${esc(i.name)}</strong>${i.retired ? ` <span class="badge">${esc(t('equip.retired'))}</span>` : ''}
-      ${batteryDue(i) ? ` <span class="badge amber">🔋 ${esc(t('equip.batteryDue'))}</span>` : ''}
+      ${batteryDue(i) ? ` <span class="badge amber">${icon('battery', { size: 12 })} ${esc(t('equip.batteryDue'))}</span>` : ''}
       ${sub ? `<div class="muted small">${esc(sub)}${i.serial ? ` · #${esc(i.serial)}` : ''}</div>` : ''}
       ${i.batteryChangedOn ? `<div class="muted small">${esc(t('equip.battery'))}: ${esc(i.batteryChangedOn)}</div>` : ''}
-      ${i.maintenanceNote ? `<div class="small" style="margin-top:3px">🔧 ${esc(i.maintenanceNote)}</div>` : ''}
+      ${i.maintenanceNote ? `<div class="small row" style="margin-top:3px;gap:5px;align-items:flex-start"><span style="color:var(--muted);flex:none">${icon('wrench', { size: 14 })}</span> ${esc(i.maintenanceNote)}</div>` : ''}
     </div>
     <div class="row" style="gap:4px"><button class="ghost sm" data-edit="${esc(i.id)}">${esc(t('common.edit') || 'Edit')}</button>
-      <button class="ghost sm" data-del="${esc(i.id)}">✕</button></div>
+      <button class="ghost sm icon-btn" data-del="${esc(i.id)}" aria-label="${esc(t('common.delete') || 'Delete')}">${icon('close', { size: 16 })}</button></div>
   </div>`;
 }
 

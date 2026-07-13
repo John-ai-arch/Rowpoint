@@ -1,6 +1,7 @@
 // Admin dashboard UI. Every request is re-authorized server-side against the
 // user's role (RBAC) on every call; this page is just a window onto that API.
 import { api, state, toast, esc, fmtDateTime, fmtDuration } from '../api.js';
+import { icon } from '../icons.js';
 import { confirmDialog, promptDialog } from '../components/dialog.js';
 
 export async function renderAdmin(el) {
@@ -11,7 +12,7 @@ export async function renderAdmin(el) {
   const TABS = ['Overview', 'Analytics', 'AI', 'Users', 'Research', 'System', 'Platform', 'Security', 'Moderation', 'Broadcast', 'Audit'];
   el.innerHTML = `<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <h1 style="margin:0">Admin</h1>
-      ${state.user?.researchAdmin ? '<a class="btn secondary sm" href="#/research">🔬 Research platform</a>' : ''}
+      ${state.user?.researchAdmin ? `<a class="btn secondary sm" href="#/research">${icon('lightbulb', { size: 16 })} Research platform</a>` : ''}
     </div>
     <div class="seg mb mt" id="tabs" style="flex-wrap:wrap">
       ${TABS.map((t, i) => `<button data-tab="${t.toLowerCase()}" class="${i === 0 ? 'on' : ''}">${t}</button>`).join('')}
@@ -290,7 +291,7 @@ export async function renderAdmin(el) {
         <table><thead><tr><th>research_id</th><th>study</th><th>type</th><th>dist</th><th>time</th><th>avg split</th><th>avg HR</th><th>HR series</th></tr></thead><tbody>
         ${rows.slice(0, 40).map(r => `<tr><td class="small">${esc(r.research_id.slice(0, 10))}…</td><td>${esc(r.study_tag)}</td><td>${esc(r.workout_type || '')}</td>
           <td>${Math.round(r.total_distance_m || 0)}m</td><td>${Math.round(r.total_time_s || 0)}s</td><td>${r.avg_split_s ? r.avg_split_s.toFixed(1) : ''}</td>
-          <td>${r.avg_heart_rate ? Math.round(r.avg_heart_rate) : '–'}</td><td>${r.hr_series_json ? '✓' : '–'}</td></tr>`).join('')}</tbody></table>`
+          <td>${r.avg_heart_rate ? Math.round(r.avg_heart_rate) : '–'}</td><td>${r.hr_series_json ? `<span style="color:var(--good)">${icon('check', { size: 13 })}</span>` : '–'}</td></tr>`).join('')}</tbody></table>`
         : '<p class="muted small mt">No contributed rows match.</p>';
     };
     body.querySelector('#rCsv').onclick = () => { const p = q(); p.set('format', 'csv'); dl(`/admin/research/workouts?${p}`, 'research-workouts.csv')(); };
@@ -530,7 +531,7 @@ export async function renderAdmin(el) {
       b.disabled = true;
       try {
         const r = await api(`/admin/backups/${encodeURIComponent(b.dataset.verify)}/verify`, { method: 'POST' });
-        toast(r.verify.ok ? 'Integrity verified ✓' : 'Integrity check FAILED', r.verify.ok ? 'success' : 'error');
+        toast(r.verify.ok ? 'Integrity verified.' : 'Integrity check FAILED', r.verify.ok ? 'success' : 'error');
       } catch (e) { toast(e.message, 'error'); }
       b.disabled = false;
     });
@@ -599,7 +600,7 @@ export async function renderAdmin(el) {
           <button class="sm danger" data-susp="${r.id}">Suspend target</button>
           <button class="sm secondary" data-note="${r.id}">Action w/ note</button>
           <button class="sm ghost" data-dis="${r.id}">Dismiss</button>
-        </div></div>`).join('') : '<p class="muted">No open reports. 🎉</p>'}</div>`;
+        </div></div>`).join('') : '<p class="muted">No open reports.</p>'}</div>`;
     const act = (id, action, note) => api(`/admin/reports/${id}/action`, { method: 'POST', body: { action, note } }).then(() => { toast('Done.'); showModeration(); });
     body.querySelectorAll('[data-susp]').forEach(b => b.onclick = async () => {
       const note = await promptDialog('Note for the audit log:', { title: 'Suspend target', confirmText: 'Suspend' });

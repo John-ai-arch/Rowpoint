@@ -197,11 +197,13 @@ nav.tabs a {
   color: var(--muted); font-size: .72rem; font-weight: 650; letter-spacing: .1px;
   transition: color .2s, background .2s, transform .15s var(--ease); position: relative;
 }
-nav.tabs a .ico { display: block; font-size: 1.3rem; line-height: 1.25; transition: transform .25s var(--ease-spring); }
+nav.tabs a .ico { display: flex; align-items: center; justify-content: center; height: 26px; margin-bottom: 2px; transition: transform .25s var(--ease-spring); }
+nav.tabs a .ico .icon { width: 23px; height: 23px; }
 nav.tabs a:hover { color: var(--text-dim); }
 nav.tabs a:hover .ico { transform: translateY(-2px); }
 nav.tabs a.active { color: var(--accent2); background: var(--grad-accent-soft); }
-nav.tabs a.active .ico { transform: translateY(-1px) scale(1.06); }
+nav.tabs a.active .ico .icon { stroke-width: 2; }
+nav.tabs a.active .ico { transform: translateY(-1px) scale(1.04); }
 
 /* ---------- cards / layout ---------- */
 .card {
@@ -489,6 +491,139 @@ canvas.chart { width: 100%; height: auto; background: var(--chart-bg); border-ra
 /* --- hero / landing --- */
 .hero-title { font-size: clamp(2rem, 6vw, 3.4rem); font-weight: 800; letter-spacing: -.03em; line-height: 1.05; }
 .gradient-text { background: var(--grad-accent); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+
+/* ============================================================================
+   Icon system + composition primitives (icons.js). One cohesive line-icon
+   family + repeatable section/hierarchy patterns so screens read as designed,
+   not stacked.
+   ============================================================================ */
+
+/* inline SVG icons inherit color (stroke=currentColor) and are sized by their
+   own width/height attrs; we only set layout defaults here. */
+.icon { display: inline-block; vertical-align: -.16em; flex: none; }
+
+/* square icon-only button (top-bar bell/gear and similar) */
+.btn.icon-btn, button.icon-btn { padding: 8px; border-radius: 10px; }
+.btn.icon-btn .icon, button.icon-btn .icon { vertical-align: middle; }
+#notifBtn { position: relative; }
+#notifCount:not(:empty) {
+  position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bad); color: #fff; font-size: .64rem; font-weight: 700;
+  border-radius: 999px; border: 2px solid var(--bg);
+}
+
+/* a tinted, rounded container that gives each section a crisp visual anchor —
+   the single most effective replacement for decorative emoji. */
+.icon-chip {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 38px; height: 38px; border-radius: 11px;
+  background: var(--grad-accent-soft); color: var(--accent2);
+  border: 1px solid var(--border-soft);
+}
+.icon-chip .icon { width: 20px; height: 20px; }
+.icon-chip.sm { width: 30px; height: 30px; border-radius: 9px; }
+.icon-chip.sm .icon { width: 17px; height: 17px; }
+.icon-chip.lg { width: 46px; height: 46px; border-radius: 14px; }
+.icon-chip.lg .icon { width: 24px; height: 24px; }
+.icon-chip.plain { background: var(--card2); color: var(--muted); }
+.icon-chip.good  { background: rgba(5,150,105,.12);  color: var(--good); border-color: rgba(5,150,105,.22); }
+.icon-chip.amber { background: rgba(180,83,9,.11);   color: var(--warn); border-color: rgba(180,83,9,.24); }
+.icon-chip.red   { background: rgba(225,29,72,.11);  color: var(--bad);  border-color: rgba(225,29,72,.24); }
+.icon-chip.gold  { background: linear-gradient(180deg, rgba(234,179,8,.16), rgba(183,121,31,.10)); color: var(--gold); border-color: rgba(183,121,31,.28); }
+.icon-chip.violet{ background: rgba(124,110,242,.12); color: var(--violet); border-color: rgba(124,110,242,.24); }
+
+/* small uppercase eyebrow — orients the eye before the heading */
+.eyebrow { display: inline-flex; align-items: center; gap: 6px; font-size: .7rem; font-weight: 750;
+  text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); }
+.eyebrow .icon { width: 14px; height: 14px; }
+
+/* section header: icon chip + title (+ optional subtitle) + trailing action.
+   Replaces bare <h3> so related content reads as a deliberate section. */
+.section-head { display: flex; align-items: center; gap: 12px; margin: 26px 2px 12px; }
+.section-head:first-child { margin-top: 4px; }
+.section-head .titles { min-width: 0; }
+.section-head h2, .section-head h3 { margin: 0; line-height: 1.2; }
+.section-head .section-sub { color: var(--muted); font-size: .82rem; font-weight: 500; margin-top: 1px; }
+.section-head .head-action { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px;
+  color: var(--accent2); font-size: .84rem; font-weight: 650; }
+.section-head .head-action .icon { width: 15px; height: 15px; }
+.section-head .head-action:hover { color: var(--accent); }
+
+/* in-card header row (icon chip + title inline), lighter than section-head */
+.card-head { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
+.card-head h2, .card-head h3 { margin: 0; }
+.card-head .card-head-action { margin-left: auto; flex: none; }
+
+/* featured card — one clear focal surface per screen (hero, coach, etc.).
+   Uses explicit accent rgba (not the gradient token) so the stop is valid, and
+   reads in both themes against var(--card). */
+.card.feature {
+  border-radius: var(--radius-lg);
+  background: linear-gradient(152deg, rgba(8,145,178,.11), var(--card) 60%);
+  border-color: rgba(8,145,178,.2);
+}
+.card.feature::before { opacity: .5; }
+@media (prefers-color-scheme: dark) {
+  .card.feature { background: linear-gradient(152deg, rgba(56,189,248,.16), var(--bg-elev) 60%); border-color: rgba(56,189,248,.22); }
+}
+
+/* leading icon inside a list-item, replacing the old emoji avatar when the row
+   isn't about a person */
+.list-item .li-icon {
+  width: 42px; height: 42px; border-radius: 12px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--card2); border: 1px solid var(--border-soft); color: var(--muted);
+}
+.list-item .li-icon .icon { width: 21px; height: 21px; }
+.list-item .li-icon.accent { background: var(--grad-accent-soft); color: var(--accent2); border-color: transparent; }
+.list-item .li-icon.red { background: rgba(225,29,72,.1); color: var(--bad); border-color: rgba(225,29,72,.2); }
+.list-item .li-icon.good { background: rgba(5,150,105,.1); color: var(--good); border-color: rgba(5,150,105,.2); }
+.list-item .li-icon.gold { background: linear-gradient(180deg, rgba(234,179,8,.14), rgba(183,121,31,.08)); color: var(--gold); border-color: rgba(183,121,31,.24); }
+.list-item .li-body { flex: 1; min-width: 0; }
+.list-item .li-body .muted { overflow: hidden; text-overflow: ellipsis; }
+
+/* trailing chevron affordance for tappable rows */
+a.list-item .li-go { color: var(--faint); margin-left: 4px; flex: none; transition: transform .2s var(--ease), color .2s; }
+a.list-item:hover .li-go { transform: translateX(2px); color: var(--muted); }
+
+/* back link — consistent "up one level" affordance on detail screens */
+.back-link { display: inline-flex; align-items: center; gap: 3px; font-size: .86rem; font-weight: 650;
+  color: var(--muted); margin: 2px 0 6px; }
+.back-link:hover { color: var(--accent2); }
+.back-link .icon { transition: transform .2s var(--ease); }
+.back-link:hover .icon { transform: translateX(-2px); }
+
+/* page header — eyebrow + title, the calm top of every screen */
+.page-head { margin: 8px 2px 2px; }
+.page-head .eyebrow { margin: 0 0 3px; }
+.page-head h1 { margin: 0; }
+
+/* dashboard readiness hero */
+.hero-top { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.streak-hero .streak-n { font-size: 2.15rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: -.5px; color: var(--text); }
+.streak-hero .streak-l { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .8px; font-weight: 700; margin-top: 3px; }
+.hero-stats { margin-top: 20px; }
+.hero-ach { margin-top: 18px; }
+.hero-cta { margin-top: 18px; }
+.stat-tile .verified { color: var(--good); display: inline-flex; vertical-align: middle; }
+.chip .chip-ic { display: inline-flex; margin-left: -2px; }
+.chip .chip-ic.gold { color: var(--gold); }
+
+/* achievement tiles now hold SVG icons (was emoji): center + theme the color */
+.ach .ic { display: inline-flex; align-items: center; justify-content: center; height: 34px; font-size: 0; }
+.ach.unlocked .ic { color: var(--gold); }
+.ach.locked .ic { color: var(--faint); }
+
+/* podium rank marks in leaderboards — gold / silver / bronze medal icons */
+.rank-medal { display: inline-flex; vertical-align: -3px; }
+.rank-medal.r1 { color: #c99a2e; }
+.rank-medal.r2 { color: #93a3b5; }
+.rank-medal.r3 { color: #c0824e; }
+
+/* liked (feed heart) — fill the outline and warm it */
+button.liked { color: var(--bad); border-color: rgba(225,29,72,.32); }
+button.liked .icon { fill: currentColor; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 720px) {

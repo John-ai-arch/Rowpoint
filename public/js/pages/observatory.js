@@ -3,6 +3,7 @@
 // distribution charts with a "you" marker, and hedged observational insights.
 // Aggregate-only — never an individual. Backed by /api/observatory.
 import { api, state, esc, fmtDistance, fmtDuration } from '../api.js';
+import { icon } from '../icons.js';
 import { t } from '../i18n.js';
 import { drawDistribution } from '../components/charts.js';
 
@@ -37,12 +38,12 @@ function draw(el, obs) {
   el.innerHTML = `
     <header class="mb">
       <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
-        <div><h1>${esc(t('obs.title'))}</h1><p class="muted">${esc(t('obs.subtitle'))}</p></div>
-        <a class="btn secondary sm" href="#/benchmark">🔎 ${esc(t('bench.open'))}</a>
+        <div class="page-head"><h1>${esc(t('obs.title'))}</h1><p class="muted">${esc(t('obs.subtitle'))}</p></div>
+        <a class="btn secondary sm" href="#/benchmark">${icon('search', { size: 16 })} ${esc(t('bench.open'))}</a>
       </div>
     </header>
 
-    ${optedIn ? '' : `<div class="notice mb">🔬 ${esc(t('obs.optInPrompt'))} <a href="#/settings">${esc(t('obs.optInCta'))}</a></div>`}
+    ${optedIn ? '' : `<div class="notice mb" style="display:flex;gap:9px;align-items:flex-start"><span style="color:var(--accent2);flex:none">${icon('lightbulb', { size: 18 })}</span><span>${esc(t('obs.optInPrompt'))} <a href="#/settings">${esc(t('obs.optInCta'))}</a></span></div>`}
 
     <div class="card">
       <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
@@ -59,13 +60,13 @@ function draw(el, obs) {
     </div>
 
     ${!obs.enoughData ? `<div class="card"><div class="empty">
-        <span class="ic" aria-hidden="true">🌍</span>
+        <div class="center" style="margin-bottom:12px"><span class="icon-chip lg">${icon('globe')}</span></div>
         <h3>${esc(t('obs.building'))}</h3>
         <p class="muted small">${esc(t('obs.buildingNote', { n: obs.minCohort }))}</p>
       </div></div>`
     : `
-      ${obs.insights.length ? `<div class="card"><h3>${esc(t('obs.insights'))}</h3>
-        ${obs.insights.map(i => `<div class="small" style="display:flex;gap:8px;margin:6px 0"><span>📊</span><span>${esc(i)}</span></div>`).join('')}
+      ${obs.insights.length ? `<div class="card"><div class="card-head"><span class="icon-chip sm">${icon('lightbulb', { size: 18 })}</span><h3>${esc(t('obs.insights'))}</h3></div>
+        ${obs.insights.map(i => `<div class="small" style="display:flex;gap:8px;margin:6px 0;align-items:flex-start"><span style="color:var(--accent2);flex:none">${icon('activity', { size: 15 })}</span><span>${esc(i)}</span></div>`).join('')}
       </div>` : ''}
 
       <div class="grid cols2">

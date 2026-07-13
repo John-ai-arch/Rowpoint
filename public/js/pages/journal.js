@@ -4,6 +4,7 @@
 // it into a scrollable, searchable journal and lets the athlete add their own
 // reflections. Reads /api/workouts/journal; saves notes via PATCH.
 import { api, toast, esc, fmtDistance, fmtDuration, fmtSplit, fmtDate } from '../api.js';
+import { icon } from '../icons.js';
 import { t } from '../i18n.js';
 
 let query = '';
@@ -35,9 +36,9 @@ async function load(list) {
 
   if (!data.entries.length) {
     list.innerHTML = `<div class="card"><div class="empty">
-      <span class="ic" aria-hidden="true">📓</span>
+      <div class="center" style="margin-bottom:12px"><span class="icon-chip lg">${icon('book')}</span></div>
       <h3>${esc(query ? t('journal.noMatches') : t('journal.empty'))}</h3>
-      ${query ? '' : `<a class="btn mt" href="#/row">${esc(t('journal.startRowing'))}</a>`}
+      ${query ? '' : `<a class="btn mt" href="#/row">${icon('oar', { size: 17 })} ${esc(t('journal.startRowing'))}</a>`}
     </div></div>`;
     return;
   }
@@ -58,7 +59,7 @@ function entryHtml(e) {
       ${e.avgSplitS ? `<span>${fmtSplit(e.avgSplitS)}/500m</span>` : ''}
       ${e.pacing && e.pacing !== 'insufficient_data' ? `<span class="badge">${esc(pacingLabel(e.pacing))}</span>` : ''}
     </div>
-    ${e.coachSummary ? `<div class="notice" style="margin-bottom:8px"><span class="small muted">✨ ${esc(t('journal.coachSummary'))}</span><br>${esc(e.coachSummary)}</div>` : ''}
+    ${e.coachSummary ? `<div class="notice" style="margin-bottom:8px"><span class="small muted ai-tag">${icon('sparkle', { size: 12 })} ${esc(t('journal.coachSummary'))}</span><br>${esc(e.coachSummary)}</div>` : ''}
     <label class="field" style="margin:0">
       <span class="small muted">${esc(t('journal.yourNote'))}</span>
       <textarea data-note-for="${esc(e.id)}" rows="2" placeholder="${esc(t('journal.notePh'))}">${esc(e.note || '')}</textarea>

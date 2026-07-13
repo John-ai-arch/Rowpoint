@@ -3,6 +3,7 @@
 // zone distribution, and weekly load — all from /api/performance/lab, drawn
 // with the shared canvas charts. Every view explains what it shows.
 import { api, esc, fmtDistance, fmtSplit } from '../api.js';
+import { icon } from '../icons.js';
 import { t } from '../i18n.js';
 import { drawScatter, drawBars } from '../components/charts.js';
 
@@ -17,8 +18,8 @@ export async function renderLab(el) {
 
   if (!lab.hasData) {
     el.innerHTML = `<header class="mb"><h1>${esc(t('lab.title'))}</h1></header>
-      <div class="card"><div class="empty"><span class="ic" aria-hidden="true">🔬</span>
-        <h3>${esc(t('lab.empty'))}</h3><a class="btn mt" href="#/row">${esc(t('lab.startRowing'))}</a></div></div>`;
+      <div class="card"><div class="empty"><div class="center" style="margin-bottom:12px"><span class="icon-chip lg">${icon('lightbulb')}</span></div>
+        <h3>${esc(t('lab.empty'))}</h3><a class="btn mt" href="#/row">${icon('oar', { size: 17 })} ${esc(t('lab.startRowing'))}</a></div></div>`;
     return;
   }
 

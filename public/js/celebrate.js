@@ -2,6 +2,7 @@
 // optional short chime (user-configurable, off by default). Animations rely on
 // CSS classes that already honor prefers-reduced-motion / html[data-motion].
 import { toast } from './api.js';
+import { icon, badgeIcon } from './icons.js';
 import { t } from './i18n.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -42,13 +43,13 @@ function playChime() {
 export function celebrate(badges) {
   if (!Array.isArray(badges) || !badges.length) return '';
   badges.forEach((b, i) => {
-    setTimeout(() => toast(`${b.icon} ${t('celebrate.unlocked')} ${t('achievements.' + b.badge)}`, 'success', 5200), i * 350);
+    setTimeout(() => toast(`${t('celebrate.unlocked')} ${t('achievements.' + b.badge)}`, 'success', 5200), i * 350);
   });
   playChime();
   return `<div class="notice celebrate" style="margin-top:12px;border-color:rgba(245,196,81,.4);background:linear-gradient(180deg,rgba(245,196,81,.12),transparent)">
-    <span class="ai-tag" style="color:var(--gold)">🎉 ${esc(t('celebrate.title'))}</span>
+    <span class="ai-tag" style="color:var(--gold)">${icon('trophy', { size: 14 })} ${esc(t('celebrate.title'))}</span>
     <div class="ach-grid" style="margin-top:10px">
-      ${badges.map(b => `<div class="ach unlocked"><span class="ic" aria-hidden="true">${b.icon}</span><div class="nm">${esc(t('achievements.' + b.badge))}</div></div>`).join('')}
+      ${badges.map(b => `<div class="ach unlocked"><span class="ic" aria-hidden="true">${icon(badgeIcon(b.badge), { size: 30 })}</span><div class="nm">${esc(t('achievements.' + b.badge))}</div></div>`).join('')}
     </div>
   </div>`;
 }

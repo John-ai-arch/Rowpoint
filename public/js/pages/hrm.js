@@ -10,7 +10,13 @@ import {
 import { drawHrSeries, drawTrend } from '../components/charts.js';
 import { promptDialog } from '../components/dialog.js';
 import { bluetoothHelpHtml } from '../ble/support.js';
+import { icon } from '../icons.js';
 import { t } from '../i18n.js';
+
+// battery reading with a small icon; used in the initial render and the
+// live 'battery' event handler (which swaps innerHTML, so the icon persists).
+const batteryHtml = (pct) => pct !== null && pct !== undefined
+  ? `${icon('battery', { size: 14 })} ${pct}%` : 'battery: n/a';
 
 const STATE_LABEL = {
   bluetooth_unavailable: () => t('ble.stateUnavailable'),
@@ -29,7 +35,7 @@ export async function renderHrm(el) {
   const liveSeries = []; // [tOffsetS, bpm] for the live mini-graph
   const liveStart = Date.now();
 
-  el.innerHTML = `<h1>Heart Rate Monitors</h1>
+  el.innerHTML = `<div class="page-head"><h1>Heart Rate Monitors</h1></div>
     <div class="seg mb" style="max-width:320px">
       <button data-tab="monitor" class="on">Monitor</button>
       <button data-tab="history">History & analysis</button>
@@ -78,7 +84,7 @@ export async function renderHrm(el) {
               ${esc(info?.name || '')}${info?.manufacturer ? ` · ${esc(info.manufacturer)}` : ''}${info?.firmware ? ` · fw ${esc(info.firmware)}` : ''}
             </p>
             <p class="muted small">
-              <span id="hrBatt">${hrManager.battery !== null ? `🔋 ${hrManager.battery}%` : 'battery: n/a'}</span>
+              <span id="hrBatt">${batteryHtml(hrManager.battery)}</span>
               · <span id="hrRssi">${signalText(hrManager.rssi)}</span>
               · connected <span id="hrDur">${fmtDuration((Date.now() - (hrManager.connectedAt || Date.now())) / 1000)}</span>
             </p>
@@ -97,13 +103,13 @@ export async function renderHrm(el) {
       </div>
 
       <div class="card">
-        <h3>Saved monitors</h3>
+        <div class="card-head"><span class="icon-chip sm red">${icon('pulse', { size: 18 })}</span><h3>Saved monitors</h3></div>
         <p class="muted small">RowPoint remembers your monitors and reconnects to the preferred one automatically at launch and when a workout starts.</p>
         <div id="knownList">${knownListHtml()}</div>
       </div>
 
       <div class="card">
-        <h3>Zones & monitor settings</h3>
+        <div class="card-head"><span class="icon-chip sm">${icon('gear', { size: 18 })}</span><h3>Zones & monitor settings</h3></div>
         <div class="grid cols2">
           <label class="field"><span>Max heart rate (bpm) — blank = auto (${state.user.birthYear ? `220 − age = ${Math.max(150, 220 - (new Date().getFullYear() - state.user.birthYear))}` : '190'})</span>
             <input id="setMaxHr" type="number" min="120" max="230" value="${state.user.maxHr ?? s.maxHr ?? ''}"></label>
@@ -127,8 +133,8 @@ export async function renderHrm(el) {
     if (!list.length) return '<p class="muted small">No monitors saved yet.</p>';
     return list.map(d => `
       <div class="list-item">
-        <div class="avatar">❤</div>
-        <div style="flex:1">
+        <span class="li-icon red">${icon('pulse', { size: 20 })}</span>
+        <div class="li-body">
           <strong>${esc(d.nickname || d.name)}</strong>
           ${d.preferred ? '<span class="badge green">preferred</span>' : ''}
           ${hrManager.deviceInfo?.id === d.id && hrManager.state === 'connected' ? '<span class="badge blue">connected</span>' : ''}
@@ -234,7 +240,7 @@ export async function renderHrm(el) {
   unsubs.push(hrManager.on('state', () => { if (tab === 'monitor') drawMonitor(); }));
   unsubs.push(hrManager.on('battery', (pct) => {
     const n = body.querySelector('#hrBatt');
-    if (n) n.textContent = pct !== null ? `🔋 ${pct}%` : 'battery: n/a';
+    if (n) n.innerHTML = batteryHtml(pct);
   }));
   unsubs.push(hrManager.on('rssi', (rssi) => {
     const n = body.querySelector('#hrRssi');
@@ -277,12 +283,12 @@ export async function renderHrm(el) {
       </div>
 
       <div class="card">
-        <h3>Average & max HR per workout</h3>
+        <div class="card-head"><span class="icon-chip sm red">${icon('pulse', { size: 18 })}</span><h3>Average & max HR per workout</h3></div>
         <canvas class="chart" id="hrTrendChart"></canvas>
       </div>
 
       <div class="card">
-        <h3>Time in zone — all workouts</h3>
+        <div class="card-head"><span class="icon-chip sm">${icon('activity', { size: 18 })}</span><h3>Time in zone — all workouts</h3></div>
         ${ZONE_NAMES.map((n, i) => `
           <div class="row" style="margin:6px 0">
             <span style="width:120px" class="small">${n}</span>

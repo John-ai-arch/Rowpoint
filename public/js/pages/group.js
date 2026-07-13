@@ -3,6 +3,7 @@
 // with roles, and analytics. Everything shown respects each member's own
 // privacy settings (enforced server-side).
 import { api, state, toast, esc, fmtSplit, fmtDistance, fmtDuration, fmtDate, fmtDateTime } from '../api.js';
+import { icon, badgeIcon } from '../icons.js';
 import { confirmDialog, promptDialog, chooseDialog } from '../components/dialog.js';
 import { subscribe, unsubscribe, onRealtime } from '../ws.js';
 
@@ -22,13 +23,6 @@ const LB_GROUPS = [
   ]],
 ];
 
-const BADGE_ICON = {
-  first_workout: '🚣', workouts_100: '💯', workouts_500: '🏭', meters_100k: '📏',
-  meters_1m: '🌊', meters_5m: '🌏', first_2k: '⏱', pb_2k: '🏆', streak_7: '🔥',
-  streak_30: '🗓', streak_365: '🎖', weekly_champion: '🥇', monthly_champion: '👑',
-  challenge_winner: '⚔️',
-};
-
 export async function renderGroup(el, groupId) {
   el.innerHTML = '<p class="muted">Loading…</p>';
   let dash;
@@ -45,10 +39,10 @@ export async function renderGroup(el, groupId) {
   function shell() {
     const g = dash.group;
     el.innerHTML = `
-      <a href="#/social" class="small">← Social</a>
+      <a href="#/social" class="back-link">${icon('chevron-left', { size: 16 })} Social</a>
       <div class="row between" style="align-items:flex-start">
         <div class="row">
-          <div class="avatar" style="width:52px;height:52px;font-size:1.4rem">${g.photoUrl ? `<img src="${esc(g.photoUrl)}" style="width:100%;height:100%;border-radius:inherit;object-fit:cover">` : '👥'}</div>
+          <div class="avatar" style="width:52px;height:52px;font-size:1.4rem">${g.photoUrl ? `<img src="${esc(g.photoUrl)}" style="width:100%;height:100%;border-radius:inherit;object-fit:cover">` : icon('users', { size: 26 })}</div>
           <div>
             <h1 style="margin:0">${esc(g.name)}</h1>
             <p class="muted small" style="margin:2px 0">
@@ -124,7 +118,7 @@ export async function renderGroup(el, groupId) {
         <p class="muted small mt">Only members who share their 2k history are eligible.</p></div>
       <div class="card"><h3>Most active (30 days)</h3>
         ${club.mostActive.length ? `<table><thead><tr><th>Athlete</th><th>Metres</th><th>Sessions</th></tr></thead><tbody>
-        ${club.mostActive.map((m, i) => `<tr><td>${i < 3 ? ['🥇', '🥈', '🥉'][i] + ' ' : ''}${esc(m.name)}</td><td>${fmtDistance(m.meters)}</td><td>${m.workouts}</td></tr>`).join('')}
+        ${club.mostActive.map((m, i) => `<tr><td>${i < 3 ? rankMedal(i + 1) + ' ' : ''}${esc(m.name)}</td><td>${fmtDistance(m.meters)}</td><td>${m.workouts}</td></tr>`).join('')}
         </tbody></table>` : '<p class="muted small">No shared activity yet.</p>'}</div>
       ${crew ? `<div class="card"><h3>Crew compatibility</h3>
         <p class="muted small">${esc(crew.note)}</p>
@@ -140,7 +134,10 @@ export async function renderGroup(el, groupId) {
 
   const tile = (n, l) => `<div class="stat-tile"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   const badgeChips = (badges) => badges.map(b =>
-    `<span class="badge blue" title="${esc(fmtDate(b.achieved_at))}">${BADGE_ICON[b.badge] || '🏅'} ${esc(b.label)}</span>`).join(' ');
+    `<span class="badge blue" title="${esc(fmtDate(b.achieved_at))}"><span style="color:var(--gold)">${icon(badgeIcon(b.badge), { size: 13 })}</span> ${esc(b.label)}</span>`).join(' ');
+  // top-3 rank → colored medal icon; everything else keeps its plain number.
+  const rankMedal = (r) => (r >= 1 && r <= 3)
+    ? `<span class="rank-medal r${r}">${icon('medal', { size: 17 })}</span>` : r;
 
   /* ================= DASHBOARD ================= */
 
@@ -164,7 +161,7 @@ export async function renderGroup(el, groupId) {
       </div>
       ${dash.myBadges.length ? `<div class="card tight"><h3>Your achievements</h3><p>${badgeChips(dash.myBadges)}</p></div>` : ''}
       <div class="card">
-        <div class="row between"><h3>Recent activity</h3><button class="ghost sm" data-goto="feed">Full feed →</button></div>
+        <div class="row between"><h3>Recent activity</h3><button class="ghost sm" data-goto="feed">Full feed ${icon('chevron-right', { size: 15 })}</button></div>
         ${dash.feed.length ? dash.feed.map(feedItemHtml).join('') : '<p class="muted small">Quiet so far — finished workouts, PBs, and milestones show up here automatically.</p>'}
       </div>`;
     body().querySelector('#copyCode').onclick = () => {
@@ -206,7 +203,7 @@ export async function renderGroup(el, groupId) {
       ${weeksRes?.weeks?.length ? `<div class="card tight"><h3>Past weeks</h3>
         ${weeksRes.weeks.slice(0, 6).map(w => `<p class="small"><strong>${esc(w.weekKey)}</strong> —
           ${w.standings.slice(0, 3).map(s => `${s.rank}. ${esc(s.displayName)} (${fmtDistance(s.meters)})`).join(' · ')}
-          ${w.standings[0] ? ' 🥇' : ''}</p>`).join('')}</div>` : ''}`;
+          ${w.standings[0] ? ' ' + rankMedal(1) : ''}</p>`).join('')}</div>` : ''}`;
     body().querySelector('#lbKind').onchange = (e) => { lbKind = e.target.value; showLeaderboards(); };
     body().querySelector('#lbRange')?.addEventListener('change', (e) => { lbRange = e.target.value; showLeaderboards(); });
   }
@@ -214,7 +211,7 @@ export async function renderGroup(el, groupId) {
   function lbTable(kind, entries) {
     if (!entries.length) return '<p class="muted small">No qualifying results yet — this board fills in automatically as members train (and share their workouts).</p>';
     const me = (e) => e.userId === state.user.id ? ' style="background:var(--bg2)"' : '';
-    const medal = (r) => r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : r;
+    const medal = rankMedal;
     const head = (cols) => `<thead><tr><th></th><th>Athlete</th>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>`;
     const row = (e, cells) => `<tr${me(e)}><td>${medal(e.rank)}</td><td>${esc(e.displayName)}</td>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`;
     let cols, cells;
@@ -230,7 +227,7 @@ export async function renderGroup(el, groupId) {
       case 'total_workouts': case 'interval_workouts':
         cols = ['Workouts']; cells = e => [e.workouts]; break;
       case 'longest_streak': case 'current_streak':
-        cols = ['Days', 'Longest ever']; cells = e => [`${e.days} 🔥`, e.longest]; break;
+        cols = ['Days', 'Longest ever']; cells = e => [`${e.days} <span style="color:var(--warn)">${icon('flame', { size: 13 })}</span>`, e.longest]; break;
       case 'most_consistent':
         cols = ['Consistency', 'Active weeks']; cells = e => [`${e.consistencyPct}%`, `${e.activeWeeks}/${e.totalWeeks}`]; break;
       case 'zone2_time':
@@ -251,25 +248,25 @@ export async function renderGroup(el, groupId) {
     const p = f.payload || {};
     const who = esc(p.displayName || 'Someone');
     const when = `<span class="muted small">${fmtDateTime(f.createdAt)}</span>`;
-    let icon = '🚣', text;
+    let ic = 'oar', tone = '', text;
     switch (f.type) {
-      case 'pb': icon = '🏆'; text = `<strong>${who}</strong> set a new verified 2k PB: <strong>${fmtDuration(p.timeS)}</strong>`; break;
-      case 'joined': icon = '👋'; text = `<strong>${who}</strong> joined the group`; break;
-      case 'milestone': icon = '🌊'; text = `<strong>${who}</strong> reached <strong>${fmtDistance(p.milestoneMeters)}</strong> lifetime meters`; break;
-      case 'weekly_champion': icon = '🥇'; text = `<strong>${who}</strong> won week ${esc(p.weekKey)} with ${fmtDistance(p.meters)}`; break;
-      case 'challenge_started': icon = '⚔️'; text = `Challenge started: <strong>${esc(p.name)}</strong> — ends ${fmtDate(p.endsAt)}`; break;
-      case 'challenge_finished': icon = '🏁'; text = `Challenge <strong>${esc(p.name)}</strong> finished — <strong>${esc(p.winner)}</strong> wins!`; break;
-      case 'goal_started': icon = '🎯'; text = `New team goal: <strong>${esc(p.name)}</strong>`; break;
-      case 'goal_completed': icon = '🎉'; text = `Team goal completed: <strong>${esc(p.name)}</strong>`; break;
-      case 'announcement': icon = '📣'; text = `<strong>${who}</strong>: ${esc(p.body || '')}`; break;
+      case 'pb': ic = 'trophy'; tone = 'gold'; text = `<strong>${who}</strong> set a new verified 2k PB: <strong>${fmtDuration(p.timeS)}</strong>`; break;
+      case 'joined': ic = 'user'; text = `<strong>${who}</strong> joined the group`; break;
+      case 'milestone': ic = 'droplet'; text = `<strong>${who}</strong> reached <strong>${fmtDistance(p.milestoneMeters)}</strong> lifetime meters`; break;
+      case 'weekly_champion': ic = 'crown'; tone = 'gold'; text = `<strong>${who}</strong> won week ${esc(p.weekKey)} with ${fmtDistance(p.meters)}`; break;
+      case 'challenge_started': ic = 'flag'; text = `Challenge started: <strong>${esc(p.name)}</strong> — ends ${fmtDate(p.endsAt)}`; break;
+      case 'challenge_finished': ic = 'flag'; tone = 'gold'; text = `Challenge <strong>${esc(p.name)}</strong> finished — <strong>${esc(p.winner)}</strong> wins!`; break;
+      case 'goal_started': ic = 'target'; text = `New team goal: <strong>${esc(p.name)}</strong>`; break;
+      case 'goal_completed': ic = 'check-circle'; tone = 'good'; text = `Team goal completed: <strong>${esc(p.name)}</strong>`; break;
+      case 'announcement': ic = 'megaphone'; tone = 'violet'; text = `<strong>${who}</strong>: ${esc(p.body || '')}`; break;
       default: text = `<strong>${who}</strong> completed ${fmtDistance(p.distanceM)}, avg split ${esc(p.avgSplitText || fmtSplit(p.avgSplit))}${p.newPb ? ' <span class="badge green">PB</span>' : ''}`;
     }
     return `<div class="list-item" data-fid="${f.id}" style="align-items:flex-start">
-      <div class="avatar">${icon}</div>
-      <div style="flex:1">${text}<div>${when}</div>
+      <span class="icon-chip sm ${tone}">${icon(ic, { size: 18 })}</span>
+      <div class="li-body">${text}<div>${when}</div>
         <div class="row mt" style="gap:6px">
-          <button class="ghost sm" data-like="${f.id}">${f.likedByMe ? '❤️' : '🤍'} ${f.likes || ''}</button>
-          <button class="ghost sm" data-cmt="${f.id}">💬 ${f.comments || ''}</button>
+          <button class="ghost sm${f.likedByMe ? ' liked' : ''}" data-like="${f.id}">${icon('heart', { size: 15 })} ${f.likes || ''}</button>
+          <button class="ghost sm" data-cmt="${f.id}">${icon('comment', { size: 15 })} ${f.comments || ''}</button>
         </div>
         <div class="cmts" id="cmts-${f.id}"></div>
       </div></div>`;
@@ -278,7 +275,8 @@ export async function renderGroup(el, groupId) {
   function wireFeedButtons(root) {
     root.querySelectorAll('[data-like]').forEach(b => b.onclick = async () => {
       const r = await api(`/groups/${groupId}/feed/${b.dataset.like}/like`, { method: 'POST' });
-      b.innerHTML = `${r.liked ? '❤️' : '🤍'} ${r.likes || ''}`;
+      b.classList.toggle('liked', !!r.liked);
+      b.innerHTML = `${icon('heart', { size: 15 })} ${r.likes || ''}`;
     });
     root.querySelectorAll('[data-cmt]').forEach(b => b.onclick = async () => {
       const box = root.querySelector(`#cmts-${b.dataset.cmt}`);
@@ -330,7 +328,7 @@ export async function renderGroup(el, groupId) {
       ${c.metric === 'team_meters' && c.target ? `<div style="background:var(--bg2);border-radius:8px;height:16px;overflow:hidden">
         <div style="width:${Math.min(100, Math.round(((c.teamTotal || 0) / c.target) * 100))}%;background:var(--accent,#38bdf8);height:100%"></div></div>
         <p class="small muted">${fmtDistance(c.teamTotal || 0)} of ${fmtDistance(c.target)} (${Math.min(100, Math.round(((c.teamTotal || 0) / c.target) * 100))}%)</p>` : ''}
-      ${c.status === 'finished' && c.winners?.length ? `<p><strong>Winners:</strong> ${c.winners.map(w => `${w.rank === 1 ? '🥇' : w.rank === 2 ? '🥈' : '🥉'} ${esc(w.displayName)}`).join(' · ')}</p>` : ''}
+      ${c.status === 'finished' && c.winners?.length ? `<p><strong>Winners:</strong> ${c.winners.map(w => `${rankMedal(w.rank)} ${esc(w.displayName)}`).join(' · ')}</p>` : ''}
       ${live && c.standings?.length ? `<table><thead><tr><th></th><th>Athlete</th><th>${c.metric === 'avg_split' ? 'Avg split' : c.metric === 'streak' ? 'Days' : c.metric === 'workouts' ? 'Workouts' : 'Meters'}</th></tr></thead><tbody>
         ${c.standings.slice(0, 10).map(s => `<tr${s.userId === state.user.id ? ' style="background:var(--bg2)"' : ''}><td>${s.rank}</td><td>${esc(s.displayName)}</td>
           <td>${c.metric === 'avg_split' ? esc(s.avgSplitText) : c.metric === 'streak' ? s.days : c.metric === 'workouts' ? s.workouts : fmtDistance(s.meters)}</td></tr>`).join('')}
@@ -376,7 +374,7 @@ export async function renderGroup(el, groupId) {
         <p class="muted small">Everyone's training counts toward the goal together.</p></div>` : ''}
       ${goals.length ? goals.map(g => `
         <div class="card tight">
-          <div class="row between"><h3>${esc(g.name)} ${g.completedAt ? '<span class="badge green">completed 🎉</span>' : ''}</h3>
+          <div class="row between"><h3>${esc(g.name)} ${g.completedAt ? `<span class="badge green">${icon('check', { size: 12 })} completed</span>` : ''}</h3>
             ${isAdmin && !g.completedAt ? `<button class="ghost sm" data-delgoal="${g.id}">Delete</button>` : ''}</div>
           <div style="background:var(--bg2);border-radius:8px;height:18px;overflow:hidden">
             <div style="width:${g.progressPct}%;background:${g.completedAt ? 'var(--good,#4ade80)' : 'var(--accent,#38bdf8)'};height:100%"></div>
@@ -405,15 +403,15 @@ export async function renderGroup(el, groupId) {
     const res = await api(`/groups/${groupId}/messages`);
     chatMessages = res.messages;
     body().innerHTML = `
-      ${res.pinned.length ? `<div class="card tight"><h3>📌 Pinned</h3>
+      ${res.pinned.length ? `<div class="card tight"><div class="card-head"><span class="icon-chip sm amber">${icon('pin', { size: 18 })}</span><h3>Pinned</h3></div>
         ${res.pinned.map(m => `<p class="small"><strong>${esc(m.displayName)}:</strong> ${esc(m.body || '')}</p>`).join('')}</div>` : ''}
       <div class="card" style="display:flex;flex-direction:column;max-height:60vh">
         <div id="chatList" style="overflow-y:auto;flex:1">${chatMessages.map(msgHtml).join('') || '<p class="muted small">Say hi — messages are visible to all group members.</p>'}</div>
         <div class="row mt" style="gap:6px">
           <input id="chatInput" placeholder="Message the group…" style="flex:1" maxlength="2000">
-          <label class="btn ghost sm" style="cursor:pointer" title="Share an image">🖼<input type="file" id="chatImg" accept="image/*" style="display:none"></label>
-          <button class="ghost sm" id="chatShare" title="Share a workout">🚣</button>
-          ${isMod ? '<button class="ghost sm" id="chatAnnounce" title="Post as announcement">📣</button>' : ''}
+          <label class="btn ghost sm icon-btn" style="cursor:pointer" title="Share an image">${icon('image', { size: 17 })}<input type="file" id="chatImg" accept="image/*" style="display:none"></label>
+          <button class="ghost sm icon-btn" id="chatShare" title="Share a workout">${icon('oar', { size: 17 })}</button>
+          ${isMod ? `<button class="ghost sm icon-btn" id="chatAnnounce" title="Post as announcement">${icon('megaphone', { size: 17 })}</button>` : ''}
           <button class="sm" id="chatSend">Send</button>
         </div>
       </div>`;
@@ -433,7 +431,7 @@ export async function renderGroup(el, groupId) {
     body().querySelector('#chatInput').onkeydown = (e) => { if (e.key === 'Enter') body().querySelector('#chatSend').click(); };
     body().querySelector('#chatAnnounce')?.addEventListener('click', () => {
       const v = body().querySelector('#chatInput').value.trim();
-      if (!v) { toast('Type the announcement first, then press 📣.'); return; }
+      if (!v) { toast('Type the announcement first, then post it as an announcement.'); return; }
       send({ kind: 'announcement', body: v });
     });
     body().querySelector('#chatImg').onchange = async (e) => {
@@ -457,17 +455,17 @@ export async function renderGroup(el, groupId) {
     const mine = m.userId === state.user.id;
     if (m.deleted) return `<p class="muted small" data-mid="${m.id}" style="font-style:italic">message deleted</p>`;
     return `<div class="list-item" data-mid="${m.id}" style="align-items:flex-start;${m.kind === 'announcement' ? 'background:var(--bg2);border-radius:8px' : ''}">
-      <div class="avatar">${m.kind === 'announcement' ? '📣' : esc(m.displayName[0])}</div>
+      <div class="avatar">${m.kind === 'announcement' ? `<span style="color:var(--violet)">${icon('megaphone', { size: 21 })}</span>` : esc(m.displayName[0])}</div>
       <div style="flex:1">
         <strong>${esc(m.displayName)}</strong> <span class="muted small">${fmtDateTime(m.createdAt)}</span>
         ${m.pinned ? '<span class="badge amber">pinned</span>' : ''}
         ${m.kind === 'announcement' ? '<span class="badge blue">announcement</span>' : ''}
         ${m.body ? `<div>${esc(m.body)}</div>` : ''}
         ${m.imageData ? `<img src="${esc(m.imageData)}" style="max-width:260px;max-height:200px;border-radius:8px;margin-top:4px">` : ''}
-        ${m.workout ? `<div class="notice small mt">🚣 Shared workout: ${fmtDistance(m.workout.distanceM)} in ${fmtDuration(m.workout.timeS)} @ ${esc(m.workout.avgSplitText)}/500m</div>` : ''}
+        ${m.workout ? `<div class="notice small mt">${icon('oar', { size: 14 })} Shared workout: ${fmtDistance(m.workout.distanceM)} in ${fmtDuration(m.workout.timeS)} @ ${esc(m.workout.avgSplitText)}/500m</div>` : ''}
         <div class="row" style="gap:4px;margin-top:4px">
           ${(m.reactions || []).map(r => `<button class="ghost sm" data-react="${m.id}" data-emoji="${esc(r.emoji)}" ${r.mine ? 'style="border-color:var(--accent,#38bdf8)"' : ''}>${esc(r.emoji)} ${r.count}</button>`).join('')}
-          <button class="ghost sm" data-addreact="${m.id}">＋😊</button>
+          <button class="ghost sm icon-btn" data-addreact="${m.id}" title="Add reaction">${icon('smile', { size: 16 })}</button>
           ${isMod ? `<button class="ghost sm" data-pin="${m.id}">${m.pinned ? 'Unpin' : 'Pin'}</button>` : ''}
           ${mine || isMod ? `<button class="ghost sm" data-delmsg="${m.id}">Delete</button>` : ''}
         </div>
@@ -538,7 +536,7 @@ export async function renderGroup(el, groupId) {
               <div><strong>${esc(m.displayName)}</strong>
                 ${m.role !== 'member' ? `<span class="badge blue">${esc(m.role)}</span>` : ''}
                 ${m.id === state.user.id ? '<span class="badge gray">you</span>' : ''}
-                <div class="muted small">2k: ${m.best2kSeconds ? `${fmtDuration(m.best2kSeconds)}${m.best2kVerified ? ' ✓' : ''}` : 'not shared'} · joined ${fmtDate(m.joinedAt)}</div>
+                <div class="muted small">2k: ${m.best2kSeconds ? `${fmtDuration(m.best2kSeconds)}${m.best2kVerified ? ` <span style="color:var(--good)">${icon('check', { size: 12 })}</span>` : ''}` : 'not shared'} · joined ${fmtDate(m.joinedAt)}</div>
                 ${m.badges.length ? `<div style="margin-top:4px">${badgeChips(m.badges.slice(0, 6))}${m.badges.length > 6 ? ` <span class="muted small">+${m.badges.length - 6} more</span>` : ''}</div>` : ''}
               </div></div>
             <div class="row" style="gap:4px">

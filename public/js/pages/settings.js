@@ -3,13 +3,14 @@
 // notifications (§14), CSV export (§14), full account deletion (§10.1(v)).
 import { api, state, setSession, toast, esc } from '../api.js';
 import { confirmDialog } from '../components/dialog.js';
+import { icon } from '../icons.js';
 import { t, getLocale, setLocale, LOCALES } from '../i18n.js';
 import { soundEnabled, setSoundEnabled } from '../celebrate.js';
 
 export function renderSettings(el) {
   const u = state.user;
   const np = u.notifPrefs || {};
-  el.innerHTML = `<h1>${esc(t('settings.title'))}</h1>
+  el.innerHTML = `<div class="page-head"><h1>${esc(t('settings.title'))}</h1></div>
 
   <div class="card">
     <h3>${esc(t('settings.language'))}</h3>
@@ -36,7 +37,7 @@ export function renderSettings(el) {
       <label class="field"><span>Target event date</span><input id="goalTargetDate" type="date" value="${u.goalTargetDate || ''}"></label>
     </div>
     <button id="saveProfile">Save profile</button>
-    <p class="muted small">Signed in as ${esc(u.email)} (${esc(u.accountType)})${u.emailVerified ? ' · verified ✓' : ' · unverified'}</p>
+    <p class="muted small">Signed in as ${esc(u.email)} (${esc(u.accountType)})${u.emailVerified ? ` · verified <span style="color:var(--good)">${icon('check', { size: 12 })}</span>` : ' · unverified'}</p>
   </div>
 
   <div class="card">
@@ -105,8 +106,8 @@ export function renderSettings(el) {
     <h3>${esc(t('equip.title'))}</h3>
     <p class="muted small">${esc(t('equip.settingsHint'))}</p>
     <div class="row" style="gap:8px;flex-wrap:wrap">
-      <a class="btn secondary" href="#/equipment">🧰 ${esc(t('equip.manage'))}</a>
-      <a class="btn secondary" href="#/integrations">⌚ ${esc(t('integrations.manage'))}</a>
+      <a class="btn secondary" href="#/equipment">${icon('wrench', { size: 16 })} ${esc(t('equip.manage'))}</a>
+      <a class="btn secondary" href="#/integrations">${icon('watch', { size: 16 })} ${esc(t('integrations.manage'))}</a>
     </div>
   </div>
 
@@ -278,7 +279,7 @@ export function renderSettings(el) {
       await api('/users/me', { method: 'DELETE', body: { confirm: 'delete' } });
       localStorage.removeItem(`rp_queue_${u.id}`);
       setSession(null, null);
-      toast('Your account and data have been deleted. Goodbye 👋', 'success', 6000);
+      toast('Your account and data have been deleted. Goodbye.', 'success', 6000);
       location.hash = '#/login';
       window.dispatchEvent(new Event('rp:navigate'));
     } catch (e) { toast(e.message, 'error'); }

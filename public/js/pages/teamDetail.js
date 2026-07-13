@@ -2,6 +2,7 @@
 // assignment, completion tracking, AI-suggestion review/override, live view.
 // Rower: assignments + leaderboards.
 import { api, state, toast, esc, fmtSplit, fmtDistance, fmtDuration, fmtDate } from '../api.js';
+import { icon } from '../icons.js';
 import { confirmDialog, promptDialog } from '../components/dialog.js';
 import { describePlanText } from './builder.js';
 
@@ -17,7 +18,7 @@ export async function renderTeamDetail(el, teamId) {
 
   const a = assignmentsData.assignments;
   el.innerHTML = `
-    <a href="#/teams" class="small">← Teams</a>
+    <a href="#/teams" class="back-link">${icon('chevron-left', { size: 16 })} Teams</a>
     <h1>${esc(rosterData?.team?.name || 'Team')}</h1>
     ${isCoach ? coachHtml(rosterData, a) : rowerHtml(a)}
   `;
@@ -26,12 +27,13 @@ export async function renderTeamDetail(el, teamId) {
   wireCommon(el, teamId);
 
   function rowerHtml(assignments) {
-    return `<h3>Assigned workouts</h3>
+    return `<div class="section-head"><span class="icon-chip gold">${icon('flag')}</span><div class="titles"><h2>Assigned workouts</h2></div></div>
       ${assignments.length ? assignments.map(x => `
         <div class="card tight">
           <div class="row between">
+            <div class="row" style="gap:11px"><span class="li-icon">${icon('oar', { size: 20 })}</span>
             <div><strong>${esc(x.name)}</strong>
-              <div class="muted small">${esc(describePlanText(x.plan))} · ${esc(x.scheduledDate)}${x.note ? ` · “${esc(x.note)}”` : ''}</div></div>
+              <div class="muted small">${esc(describePlanText(x.plan))} · ${esc(x.scheduledDate)}${x.note ? ` · “${esc(x.note)}”` : ''}</div></div></div>
             <div class="row">
               ${x.completedByMe ? '<span class="badge green">done</span>' : `<a class="btn sm" href="#/row?assignment=${x.id}&team=${teamId}">Row it</a>`}
               <a class="btn ghost sm" href="#/live/${x.id}">Live / results</a>
@@ -43,7 +45,7 @@ export async function renderTeamDetail(el, teamId) {
   function coachHtml(rd, assignments) {
     return `
     <div class="card">
-      <h3>Assign a workout to the whole team</h3>
+      <div class="card-head"><span class="icon-chip sm">${icon('calendar', { size: 18 })}</span><h3>Assign a workout to the whole team</h3></div>
       <div class="grid cols2">
         <label class="field"><span>Name</span><input id="aName" value="Team steady state"></label>
         <label class="field"><span>Date</span><input id="aDate" type="date" value="${new Date().toISOString().slice(0, 10)}"></label>
@@ -58,20 +60,20 @@ export async function renderTeamDetail(el, teamId) {
       <button id="assignBtn">Assign to team</button>
     </div>
 
-    <h3>Assignments & completion</h3>
+    <div class="section-head"><span class="icon-chip">${icon('check-circle')}</span><div class="titles"><h2>Assignments & completion</h2></div></div>
     ${assignments.length ? assignments.map(x => `
       <div class="card tight">
         <div class="row between">
           <div><strong>${esc(x.name)}</strong><div class="muted small">${esc(describePlanText(x.plan))} · ${esc(x.scheduledDate)}</div></div>
-          <a class="btn sm" href="#/live/${x.id}">📡 Watch live</a>
+          <a class="btn sm" href="#/live/${x.id}">${icon('activity', { size: 15 })} Watch live</a>
         </div>
         ${x.roster ? `<div class="row mt" style="gap:6px">
-          ${x.roster.map(r => `<span class="badge ${r.completed ? 'green' : 'gray'}">${esc(r.displayName)} ${r.completed ? '✓' : '·'}</span>`).join('')}
+          ${x.roster.map(r => `<span class="badge ${r.completed ? 'green' : 'gray'}">${esc(r.displayName)} ${r.completed ? icon('check', { size: 12 }) : '·'}</span>`).join('')}
           ${!x.roster.length ? '<span class="muted small">No rowers on the team yet.</span>' : ''}
         </div>` : ''}
       </div>`).join('') : '<p class="muted">Nothing assigned yet.</p>'}
 
-    <h3>Roster</h3>
+    <div class="section-head"><span class="icon-chip">${icon('users')}</span><div class="titles"><h2>Roster</h2></div></div>
     <div id="aiSuggestions"></div>
     ${rd.roster.length ? rd.roster.map(r => `
       <div class="card tight">
@@ -79,7 +81,7 @@ export async function renderTeamDetail(el, teamId) {
           <div class="row"><div class="avatar">${esc(r.displayName[0] || '?')}</div>
             <div><strong>${esc(r.displayName)}</strong>
               <div class="muted small">
-                2k PB: ${r.best2kSeconds ? `${fmtDuration(r.best2kSeconds)}${r.best2kVerified ? ' ✓' : ' (self-reported)'}` : 'not shared'}
+                2k PB: ${r.best2kSeconds ? `${fmtDuration(r.best2kSeconds)}${r.best2kVerified ? ` <span style="color:var(--good)">${icon('check', { size: 12 })}</span>` : ' (self-reported)'}` : 'not shared'}
                 ${r.weightClass ? ` · ${esc(r.weightClass)}` : ''}${r.goalType ? ` · ${esc(r.goalType.replaceAll('_', ' '))}` : ''}
               </div></div></div>
           <button class="ghost sm" data-remove="${r.id}" data-name="${esc(r.displayName)}">Remove</button>
@@ -127,7 +129,8 @@ export async function renderTeamDetail(el, teamId) {
     api(`/ai/team/${tid}/suggestions`).then(({ suggestions }) => {
       if (!suggestions.length) return;
       root.querySelector('#aiSuggestions').innerHTML = `<div class="card ai-card">
-        <div class="row between"><h3>Today's AI suggestions to your rowers</h3><span class="ai-tag">✨ review / override</span></div>
+        <div class="card-head"><span class="icon-chip sm">${icon('sparkle', { size: 18 })}</span><h3>Today's AI suggestions to your rowers</h3>
+          <span class="ai-tag card-head-action">review / override</span></div>
         ${suggestions.map(s => `<div class="list-item"><div style="flex:1">
           <strong>${esc(s.displayName)}</strong> <span class="badge ${s.status === 'overridden' ? 'amber' : 'blue'}">${esc(String(s.status || '').replaceAll('_', ' '))}</span>
           <div class="muted small">${esc(s.text)}</div><div class="ai-tag">${esc(String(s.rationaleTag || '').replaceAll('_', ' '))}</div></div>

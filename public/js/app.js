@@ -1,5 +1,6 @@
 // RowPoint SPA shell: hash router, top bar, tab nav, auth guard.
 import { state, loadMe, setSession, api, toast, esc, ApiFail } from './api.js';
+import { icon } from './icons.js';
 import { startSyncWorker, pendingCount } from './offline.js';
 import { t, firstRunNeedsLanguage, setLocale, LOCALES } from './i18n.js';
 import { renderAuth } from './pages/auth.js';
@@ -95,27 +96,27 @@ function shell(contentEl, activeTab) {
   const u = state.user;
   const pending = u ? pendingCount(u.id) : 0;
   const app = document.getElementById('app');
-  const tab = (href, id, ico, label) =>
-    `<a href="${href}" class="${activeTab === id ? 'active' : ''}" ${activeTab === id ? 'aria-current="page"' : ''}><span class="ico" aria-hidden="true">${ico}</span>${esc(label)}</a>`;
+  const tab = (href, id, iconName, label) =>
+    `<a href="${href}" class="${activeTab === id ? 'active' : ''}" ${activeTab === id ? 'aria-current="page"' : ''}><span class="ico">${icon(iconName)}</span>${esc(label)}</a>`;
   app.innerHTML = `
     <header class="topbar">
       <a class="brand" href="#/" aria-label="RowPoint home"><span class="dot" aria-hidden="true"></span> RowPoint</a>
       <div class="actions">
         ${pending ? `<span class="badge amber" title="${esc(t('nav.pendingTitle'))}">${esc(t('nav.pending', { n: pending }))}</span>` : ''}
-        ${u ? `<button class="ghost sm" id="notifBtn" aria-label="${esc(t('nav.notifications'))}">🔔<span id="notifCount"></span></button>` : ''}
-        ${u ? `<a href="#/settings" class="btn ghost sm" aria-label="${esc(t('nav.settings'))}">⚙︎</a>` : ''}
+        ${u ? `<button class="ghost sm icon-btn" id="notifBtn" aria-label="${esc(t('nav.notifications'))}">${icon('bell', { size: 20 })}<span id="notifCount"></span></button>` : ''}
+        ${u ? `<a href="#/settings" class="btn ghost sm icon-btn" aria-label="${esc(t('nav.settings'))}">${icon('gear', { size: 20 })}</a>` : ''}
       </div>
     </header>
     <main id="page"></main>
     ${u ? `
     <nav class="tabs" aria-label="Main">
-      ${tab('#/', 'home', '⌂', t('nav.home'))}
-      ${tab('#/row', 'row', '⏱', t('nav.row'))}
-      ${tab('#/progress', 'progress', '◈', t('nav.progress'))}
-      ${tab('#/hr', 'hr', '❤', t('nav.heart'))}
-      ${tab('#/history', 'history', '☰', t('nav.history'))}
-      ${tab('#/teams', 'teams', '⚑', t('nav.teams'))}
-      ${tab('#/social', 'social', '◎', t('nav.social'))}
+      ${tab('#/', 'home', 'home', t('nav.home'))}
+      ${tab('#/row', 'row', 'oar', t('nav.row'))}
+      ${tab('#/progress', 'progress', 'progress', t('nav.progress'))}
+      ${tab('#/hr', 'hr', 'heart', t('nav.heart'))}
+      ${tab('#/history', 'history', 'history', t('nav.history'))}
+      ${tab('#/teams', 'teams', 'flag', t('nav.teams'))}
+      ${tab('#/social', 'social', 'social', t('nav.social'))}
     </nav>` : ''}
   `;
   document.getElementById('page').appendChild(contentEl);
@@ -128,11 +129,11 @@ async function wireNotifications() {
   try {
     const { notifications } = await api('/users/me/notifications');
     const unread = notifications.filter(n => !n.read).length;
-    if (unread) document.getElementById('notifCount').textContent = ` ${unread}`;
+    if (unread) document.getElementById('notifCount').textContent = String(unread > 99 ? '99+' : unread);
     btn.onclick = async () => {
       const items = notifications.slice(0, 20).map(n =>
-        `<div class="list-item"><div class="avatar" aria-hidden="true">🔔</div><div><strong>${esc(n.title)}</strong><div class="muted small">${esc(n.body || '')}</div></div></div>`).join('')
-        || `<div class="empty"><span class="ic" aria-hidden="true">🔔</span><p class="muted">${esc(t('nav.noNotifications'))}</p></div>`;
+        `<div class="list-item"><div class="li-icon accent">${icon('bell', { size: 20 })}</div><div class="li-body"><strong>${esc(n.title)}</strong><div class="muted small">${esc(n.body || '')}</div></div></div>`).join('')
+        || `<div class="empty"><div class="center" style="margin-bottom:12px"><span class="icon-chip lg plain">${icon('bell')}</span></div><p class="muted">${esc(t('nav.noNotifications'))}</p></div>`;
       openModal(`<h2>${esc(t('nav.notifications'))}</h2>${items}`);
       if (unread) { await api('/users/me/notifications/read', { method: 'POST' }); document.getElementById('notifCount').textContent = ''; }
     };
@@ -191,7 +192,7 @@ async function route() {
     const friendly = e instanceof ApiFail
       ? esc(e.message)
       : esc(t('common.pageErrorBody'));
-    el.innerHTML = `<div class="card empty"><span class="ic" aria-hidden="true">😕</span>
+    el.innerHTML = `<div class="card empty"><div class="center" style="margin-bottom:14px"><span class="icon-chip lg amber">${icon('warning')}</span></div>
       <h2>${esc(t('common.somethingWrong'))}</h2>
       <p class="muted">${friendly}</p>
       <button class="secondary mt" onclick="location.reload()">${esc(t('common.retry'))}</button></div>`;

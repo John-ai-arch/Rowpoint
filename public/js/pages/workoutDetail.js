@@ -4,6 +4,7 @@
 // performance decomposition — loaded lazily, never blocking the page).
 import { api, state, esc, fmtSplit, fmtDistance, fmtDuration, fmtDateTime } from '../api.js';
 import { t } from '../i18n.js';
+import { icon } from '../icons.js';
 import { drawSplitBars, drawForceCurve, drawHrSeries } from '../components/charts.js';
 import { describePlanText } from './builder.js';
 import { zoneBounds, effectiveMaxHr, ZONE_COLORS, ZONE_NAMES } from '../ble/sensors.js';
@@ -17,7 +18,7 @@ export async function renderWorkoutDetail(el, id) {
   const fb = w.aiFeedback;
 
   el.innerHTML = `
-    <a href="#/history" class="small">← History</a>
+    <a href="#/history" class="back-link">${icon('chevron-left', { size: 16 })} History</a>
     <h1>${fmtDistance(w.total_distance_m)} · ${fmtDuration(w.total_time_s)}</h1>
     <p class="muted">${fmtDateTime(w.started_at)} · ${esc(describePlanText(w.plan))} · ${esc(w.machine_type || 'rower')}${w.machine_id ? ` · ${esc(w.machine_id)}` : ''}${w.assigned_by_coach_id ? ' · coach-assigned' : ' · self-directed'}</p>
 
@@ -28,7 +29,8 @@ export async function renderWorkoutDetail(el, id) {
     </div>
 
     ${fb ? `<div class="card ai-card">
-      <div class="row between"><h3>Pacing feedback</h3><span class="ai-tag">✨ AI-generated</span></div>
+      <div class="card-head"><span class="icon-chip sm">${icon('sparkle', { size: 18 })}</span><h3>Pacing feedback</h3>
+        <span class="ai-tag card-head-action">${icon('sparkle', { size: 13 })} AI-generated</span></div>
       <p>${esc(fb.text)}</p>
       <p class="muted small">Pacing: <strong>${esc(String(fb.classification || '').replaceAll('_', ' '))}</strong>
         ${Number.isFinite(fb.firstThirdPace) ? ` · first third ${fmtSplit(fb.firstThirdPace)} · last third ${fmtSplit(fb.lastThirdPace)} · avg ${fmtSplit(fb.avgPace)}` : ''}</p>
@@ -37,7 +39,7 @@ export async function renderWorkoutDetail(el, id) {
     </div>` : ''}
 
     ${splits.length ? `<div class="card">
-      <h3>Splits</h3>
+      <div class="card-head"><span class="icon-chip sm">${icon('activity', { size: 18 })}</span><h3>Splits</h3></div>
       <canvas class="chart" id="splitChart"></canvas>
       <table class="mt"><thead><tr><th>#</th><th>Dist</th><th>Time</th><th>/500m</th><th>s/m</th><th>HR</th><th>W</th></tr></thead>
       <tbody>${splits.map(s => `<tr><td>${s.split_index + 1}</td><td>${Math.round(s.distance_m)}m</td><td>${fmtDuration(s.time_s)}</td>
@@ -46,7 +48,7 @@ export async function renderWorkoutDetail(el, id) {
     </div>` : ''}
 
     ${w.hrSeries?.length ? `<div class="card">
-      <h3>Heart rate</h3>
+      <div class="card-head"><span class="icon-chip sm red">${icon('pulse', { size: 18 })}</span><h3>Heart rate</h3></div>
       <div class="grid cols3">
         <div class="stat-tile"><div class="n">${Math.round(w.avg_heart_rate || 0)}</div><div class="l">avg bpm</div></div>
         <div class="stat-tile"><div class="n" style="color:var(--bad)">${Math.round(w.max_heart_rate || 0)}</div><div class="l">max bpm</div></div>
@@ -70,13 +72,13 @@ export async function renderWorkoutDetail(el, id) {
     </div>` : ''}
 
     ${forceCurves.length ? `<div class="card">
-      <div class="row between"><h3>Stroke force curves</h3>
-        <input id="strokeSlider" type="range" min="0" max="${forceCurves.length - 1}" value="0" style="max-width:200px"></div>
+      <div class="card-head"><span class="icon-chip sm">${icon('activity', { size: 18 })}</span><h3>Stroke force curves</h3>
+        <input id="strokeSlider" class="card-head-action" type="range" min="0" max="${forceCurves.length - 1}" value="0" style="max-width:200px"></div>
       <canvas class="chart" id="forceChart"></canvas>
       <p class="muted small" id="strokeLabel"></p>
     </div>` : ''}
 
-    <div class="card" id="physicsCard"><h3>${esc(t('physics.title'))}</h3><p class="muted small">${esc(t('common.loading'))}</p></div>
+    <div class="card" id="physicsCard"><div class="card-head"><span class="icon-chip sm violet">${icon('activity', { size: 18 })}</span><h3>${esc(t('physics.title'))}</h3></div><p class="muted small">${esc(t('common.loading'))}</p></div>
   `;
 
   if (splits.length) drawSplitBars(el.querySelector('#splitChart'), splits);
@@ -120,7 +122,7 @@ async function renderPhysics(card, workoutId) {
   const badge = (prov) => `<span class="badge ${prov === 'measured' ? 'green' : prov === 'estimated' ? 'blue' : 'amber'}">${esc(t(`twin.provenance.${prov}`) || prov)}</span>`;
 
   card.innerHTML = `
-    <h3>${esc(t('physics.title'))}</h3>
+    <div class="card-head"><span class="icon-chip sm violet">${icon('activity', { size: 18 })}</span><h3>${esc(t('physics.title'))}</h3></div>
     ${e ? `<div class="grid cols3">
       <div class="stat-tile"><div class="n">${Math.round(e.calories.value)}</div><div class="l">${esc(t('physics.calories'))} ±${Math.round(e.calories.uncertainty)}</div></div>
       <div class="stat-tile"><div class="n">${Math.round(e.mechanicalWorkKj.value)}</div><div class="l">${esc(t('physics.workKj'))}</div></div>

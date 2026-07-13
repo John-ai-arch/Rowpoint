@@ -4,11 +4,17 @@
 // and recent workouts.
 import { api, state, toast, esc, fmtSplit, fmtDistance, fmtDuration, fmtDate } from '../api.js';
 import { t } from '../i18n.js';
+import { icon, machineIcon, badgeIcon } from '../icons.js';
 import { describePlanText } from './builder.js';
 
 export async function renderDashboard(el) {
   const u = state.user;
-  el.innerHTML = `<h1>${esc(t('dash.greeting', { name: u.displayName.split(' ')[0] }))}</h1>
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  el.innerHTML = `
+    <div class="page-head">
+      <p class="eyebrow">${esc(today)}</p>
+      <h1>${esc(t('dash.greeting', { name: u.displayName.split(' ')[0] }))}</h1>
+    </div>
     <div id="content">${dashSkeleton()}</div>`;
 
   const content = el.querySelector('#content');
@@ -45,51 +51,77 @@ export async function renderDashboard(el) {
     ${suggestion ? renderCoachCard(suggestion) : ''}
 
     ${(advisorNotes || []).filter(n => n.kind === 'experiment').map(n => `
-    <div class="card" style="border-left:3px solid var(--accent,#3d9be9)">
-      <div class="row between"><h3 style="margin:0">🧪 ${esc(n.title || t('dash.experimentTitle'))}</h3>
-        <span class="badge blue">${esc(t('dash.experimentBadge'))}</span></div>
-      <p class="small" style="margin:6px 0">${esc(n.note)}</p>
+    <div class="card">
+      <div class="card-head">
+        <span class="icon-chip sm violet">${icon('lightbulb', { size: 18 })}</span>
+        <h3>${esc(n.title || t('dash.experimentTitle'))}</h3>
+        <span class="badge blue card-head-action">${esc(t('dash.experimentBadge'))}</span>
+      </div>
+      <p class="small" style="margin:0 0 6px">${esc(n.note)}</p>
       <p class="muted small" style="margin:0">${esc(t('dash.experimentOptional'))}</p>
     </div>`).join('')}
 
     ${!checkin ? `
     <div class="card ai-card" id="wellnessNudge">
-      <div class="row between"><h3>${esc(t('dash.dailyCheckin'))}</h3><span class="badge blue">${esc(t('dash.seconds'))}</span></div>
-      <p class="muted small">${esc(t('dash.checkinBlurb'))}</p>
-      <a class="btn" href="#/wellness">${esc(t('dash.checkinCta'))}</a>
+      <div class="card-head">
+        <span class="icon-chip sm">${icon('droplet', { size: 18 })}</span>
+        <h3>${esc(t('dash.dailyCheckin'))}</h3>
+        <span class="badge blue card-head-action">${esc(t('dash.seconds'))}</span>
+      </div>
+      <p class="muted small" style="margin:0 0 14px">${esc(t('dash.checkinBlurb'))}</p>
+      <a class="btn" href="#/wellness">${icon('check', { size: 17 })} ${esc(t('dash.checkinCta'))}</a>
     </div>` : ''}
 
     ${assignments.length ? `
+    <div class="section-head">
+      <span class="icon-chip gold">${icon('flag')}</span>
+      <div class="titles"><h2>${esc(t('dash.assignedByCoach'))}</h2></div>
+    </div>
     <div class="card">
-      <h3>${esc(t('dash.assignedByCoach'))}</h3>
       ${assignments.map(a => `
         <div class="list-item">
-          <div style="flex:1"><strong>${esc(a.name)}</strong>
+          <span class="li-icon">${icon(machineIcon(a.machineType), { size: 20 })}</span>
+          <div class="li-body"><strong>${esc(a.name)}</strong>
             <div class="muted small">${esc(describePlanText(a.plan))} · ${esc(a.teamName)} · ${esc(a.scheduledDate)}${a.note ? ` · “${esc(a.note)}”` : ''}</div></div>
           <a class="btn sm" href="#/row?assignment=${a.id}&team=${a.teamId}">${esc(t('dash.rowIt'))}</a>
         </div>`).join('')}
     </div>` : ''}
 
     ${daily.length ? `
+    <div class="section-head">
+      <span class="icon-chip">${icon('timer')}</span>
+      <div class="titles"><h2>${esc(t('dash.suggestedToday'))}</h2></div>
+    </div>
     <div class="card">
-      <h3>${esc(t('dash.suggestedToday'))}</h3>
-      ${daily.map(d => `<div class="list-item"><div style="flex:1"><strong>${esc(d.name)}</strong>
-        <div class="muted small">${esc(d.machineType)} · ${esc(describePlanText(d.plan))}</div></div>
+      ${daily.map(d => `<div class="list-item">
+        <span class="li-icon">${icon(machineIcon(d.machineType), { size: 20 })}</span>
+        <div class="li-body"><strong>${esc(d.name)}</strong>
+          <div class="muted small">${esc(d.machineType)} · ${esc(describePlanText(d.plan))}</div></div>
         <a class="btn sm secondary" href="#/row?planId=${d.id}">${esc(t('dash.row'))}</a></div>`).join('')}
     </div>` : ''}
 
     ${recent.length ? `
+    <div class="section-head">
+      <span class="icon-chip">${icon('history')}</span>
+      <div class="titles"><h2>${esc(t('dash.recentWorkouts'))}</h2></div>
+      <a href="#/history" class="head-action">${esc(t('dash.seeAll'))} ${icon('chevron-right', { size: 15 })}</a>
+    </div>
     <div class="card">
-      <div class="row between"><h3>${esc(t('dash.recentWorkouts'))}</h3><a href="#/history" class="small">${esc(t('dash.seeAll'))}</a></div>
       ${recent.map(w => `<a class="list-item" href="#/workout/${w.id}" style="color:inherit">
-        <div class="avatar">${w.machine_type === 'bike' ? '🚲' : '🚣'}</div>
-        <div style="flex:1"><strong>${fmtDistance(w.total_distance_m)} · ${fmtDuration(w.total_time_s)}</strong>
+        <span class="li-icon accent">${icon(machineIcon(w.machine_type), { size: 20 })}</span>
+        <div class="li-body"><strong>${fmtDistance(w.total_distance_m)} · ${fmtDuration(w.total_time_s)}</strong>
           <div class="muted small">${fmtDate(w.started_at)} · avg ${fmtSplit(w.avg_split_s)}/500m${w.assigned_by_coach_id ? ' · coach-assigned' : ''}</div></div>
-        ${w.aiFeedback ? `<span class="badge ${w.aiFeedback.classification === 'well_paced' ? 'green' : 'amber'}">${esc((w.aiFeedback.classification || '').replaceAll('_', ' '))}</span>` : ''}
+        ${w.aiFeedback ? `<span class="badge ${w.aiFeedback.classification === 'well_paced' ? 'green' : 'amber'}">${esc((w.aiFeedback.classification || '').replaceAll('_', ' '))}</span>`
+          : `<span class="li-go">${icon('chevron-right', { size: 18 })}</span>`}
       </a>`).join('')}
-    </div>` : `<div class="card"><div class="empty"><span class="ic" aria-hidden="true">🚣</span><h3>${esc(t('dash.noWorkoutsTitle'))}</h3><p class="muted">${esc(t('dash.noWorkoutsBlurb'))}</p><a class="btn mt" href="#/row">${esc(t('dash.startRowing'))}</a></div></div>`}
+    </div>` : `<div class="card"><div class="empty"><div class="center" style="margin-bottom:14px"><span class="icon-chip lg">${icon('oar')}</span></div><h3>${esc(t('dash.noWorkoutsTitle'))}</h3><p class="muted">${esc(t('dash.noWorkoutsBlurb'))}</p><a class="btn mt" href="#/row">${icon('oar', { size: 17 })} ${esc(t('dash.startRowing'))}</a></div></div>`}
 
-    ${u.isAdmin ? `<div class="card"><h3>${esc(t('dash.adminTools'))}</h3><a class="btn secondary" href="#/admin">${esc(t('dash.openAdmin'))}</a></div>` : ''}
+    ${u.isAdmin ? `
+    <div class="section-head">
+      <span class="icon-chip plain">${icon('shield')}</span>
+      <div class="titles"><h2>${esc(t('dash.adminTools'))}</h2></div>
+    </div>
+    <div class="card"><a class="btn secondary" href="#/admin">${icon('shield', { size: 17 })} ${esc(t('dash.openAdmin'))}</a></div>` : ''}
   `;
 
   // "Start this session" hands the coach's machine-programmable plan to the
@@ -125,44 +157,46 @@ function heroHtml(prog, u) {
     .sort((a, b) => (b.achievedAt || 0) - (a.achievedAt || 0)).slice(0, 4);
 
   return `
-  <div class="card" style="background:linear-gradient(150deg, rgba(56,189,248,.10), var(--card) 60%)">
-    <div class="row between" style="align-items:flex-start;gap:18px">
+  <div class="card feature">
+    <div class="hero-top">
       <div>
-        <p class="muted small" style="margin:0 0 10px">${esc(t('dash.howAmIDoing'))}</p>
-        <div class="row" style="gap:22px;align-items:center">
-          <div class="streak-hero">
-            <span class="flame" aria-hidden="true">🔥</span>
-            <div><div style="font-size:2rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1">${prog.streak.current}</div>
-              <div class="l" style="color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.6px">${esc(t('progress.dayStreak'))}</div></div>
-          </div>
-          <div class="ring" style="width:96px;height:96px">
-            <svg viewBox="0 0 96 96" aria-hidden="true">
-              <circle class="track" cx="48" cy="48" r="${r}" stroke-width="9"></circle>
-              <circle class="bar" cx="48" cy="48" r="${r}" stroke-width="9" stroke="url(#dashring)"
-                stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"></circle>
-              <defs><linearGradient id="dashring" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#0d9488"/></linearGradient></defs>
-            </svg>
-            <div class="ring-label"><div class="v" style="font-size:1.1rem">${pct}%</div><div class="u" style="font-size:.55rem;letter-spacing:.4px;max-width:72px;margin:0 auto;line-height:1.15">${esc(t('progress.weeklyGoal'))}</div></div>
+        <p class="eyebrow" style="margin:0 0 12px">${esc(t('dash.howAmIDoing'))}</p>
+        <div class="streak-hero">
+          <span class="icon-chip lg gold">${icon('flame', { size: 26 })}</span>
+          <div>
+            <div class="streak-n">${prog.streak.current}</div>
+            <div class="streak-l">${esc(t('progress.dayStreak'))}</div>
           </div>
         </div>
       </div>
-      <a class="btn ghost sm" href="#/progress">${esc(t('dash.viewProgress'))}</a>
+      <div class="ring" style="width:104px;height:104px">
+        <svg viewBox="0 0 104 104" aria-hidden="true">
+          <circle class="track" cx="52" cy="52" r="${r}" stroke-width="9"></circle>
+          <circle class="bar" cx="52" cy="52" r="${r}" stroke-width="9" stroke="url(#dashring)"
+            stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${offset.toFixed(1)}"></circle>
+          <defs><linearGradient id="dashring" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#0d9488"/></linearGradient></defs>
+        </svg>
+        <div class="ring-label"><div class="v" style="font-size:1.25rem">${pct}%</div><div class="u" style="font-size:.55rem;letter-spacing:.4px;max-width:74px;margin:0 auto;line-height:1.15">${esc(t('progress.weeklyGoal'))}</div></div>
+      </div>
     </div>
 
-    <div class="grid cols4 mt">
+    <div class="grid cols4 hero-stats">
       <div class="stat-tile tight"><div class="n">${fmtDistance(weekMeters)}</div><div class="l">${esc(t('dash.thisWeek'))}</div></div>
       <div class="stat-tile tight"><div class="n">${fmtDistance(prog.totals.meters)}</div><div class="l">${esc(t('dash.lifetime'))}</div></div>
       <div class="stat-tile tight"><div class="n">${prog.totals.workouts}</div><div class="l">${esc(t('progress.totalWorkouts'))}</div></div>
-      <div class="stat-tile tight"><div class="n">${u.best2kSeconds ? fmtSplit(u.best2kSeconds / 4) : '–'}</div><div class="l">${esc(t('dash.twoKpb'))} ${u.best2kVerified ? '✓' : esc(t('dash.selfReported'))}</div></div>
+      <div class="stat-tile tight"><div class="n">${u.best2kSeconds ? fmtSplit(u.best2kSeconds / 4) : '–'}</div>
+        <div class="l">${esc(t('dash.twoKpb'))} ${u.best2kVerified ? `<span class="verified" title="Verified">${icon('check', { size: 12 })}</span>` : esc(t('dash.selfReported'))}</div></div>
     </div>
 
     ${recentAch.length ? `
-    <div class="mt">
-      <p class="muted small" style="margin:4px 0 8px">${esc(t('dash.recentAchievements'))}</p>
+    <div class="hero-ach">
+      <p class="eyebrow" style="margin:0 0 9px">${esc(t('dash.recentAchievements'))}</p>
       <div class="row" style="gap:8px">
-        ${recentAch.map(b => `<span class="chip" title="${esc(fmtDate(b.achievedAt))}">${b.icon} ${esc(t('achievements.' + b.badge))}</span>`).join('')}
+        ${recentAch.map(b => `<span class="chip" title="${esc(fmtDate(b.achievedAt))}"><span class="chip-ic gold">${icon(badgeIcon(b.badge), { size: 14 })}</span>${esc(t('achievements.' + b.badge))}</span>`).join('')}
       </div>
     </div>` : ''}
+
+    <a class="btn ghost sm hero-cta" href="#/progress">${esc(t('dash.viewProgress'))} ${icon('arrow-right', { size: 16 })}</a>
   </div>`;
 }
 
@@ -180,9 +214,10 @@ function renderCoachCard(suggestion) {
   // §11.5 disclosure: machine-generated coaching is always labeled as such,
   // and the generation path (language model vs deterministic analysis) is
   // never blurred — phrased for athletes, not developers.
-  const sourceLabel = suggestion.source === 'llm' ? '✨ AI-generated · AI coach'
+  const sourceLabel = suggestion.source === 'llm' ? 'AI-generated · AI coach'
     : suggestion.source === 'guardrail' ? 'Coach plan first'
-      : '✨ AI-generated · training analysis';
+      : 'AI-generated · training analysis';
+  const sourceIcon = suggestion.source === 'guardrail' ? 'flag' : 'sparkle';
   const confidence = suggestion.confidence || rec.confidence;
   const dur = Array.isArray(w.durationMinutes) ? `${w.durationMinutes[0]}–${w.durationMinutes[1]} min` : null;
   const targets = [
@@ -193,13 +228,20 @@ function renderCoachCard(suggestion) {
 
   if (overridden) {
     return `<div class="card ai-card">
-      <div class="row between"><h3>Today's plan</h3><span class="ai-tag">Replaced by your coach</span></div>
-      <p>${esc(suggestion.text)}</p></div>`;
+      <div class="card-head">
+        <span class="icon-chip">${icon('flag', { size: 20 })}</span>
+        <div class="titles"><h3 style="margin:0">Today's plan</h3><span class="ai-tag">Replaced by your coach</span></div>
+      </div>
+      <p style="margin:0">${esc(suggestion.text)}</p></div>`;
   }
 
   return `
     <div class="card ai-card">
-      <div class="row between"><h3>Today's coach recommendation</h3><span class="ai-tag">${sourceLabel}</span></div>
+      <div class="card-head">
+        <span class="icon-chip">${icon(sourceIcon, { size: 20 })}</span>
+        <div class="titles"><h3 style="margin:0">Today's coach recommendation</h3>
+          <span class="ai-tag">${esc(sourceLabel)}</span></div>
+      </div>
       <p><strong>${esc(rec.title || '')}</strong>
         ${confidence ? `<span class="badge ${confidence === 'high' ? 'green' : confidence === 'medium' ? 'blue' : 'gray'}">${esc(confidence)} confidence</span>` : ''}</p>
       ${w.description ? `<p>${esc(w.description)}</p>` : ''}

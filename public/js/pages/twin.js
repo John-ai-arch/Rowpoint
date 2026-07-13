@@ -6,6 +6,7 @@
 // sparkline, and the evidence trail behind the number. Strictly own-data
 // (the API has no way to address another athlete).
 import { api, esc, toast, fmtDateTime } from '../api.js';
+import { icon } from '../icons.js';
 import { t } from '../i18n.js';
 import { openModal } from '../app.js';
 
@@ -71,7 +72,7 @@ export async function renderTwin(el) {
       <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
         <div><h1>${esc(t('twin.title'))}</h1>
           <p class="muted">${esc(t('twin.subtitle'))}</p></div>
-        <button class="btn secondary sm" id="rebuildBtn">🔄 ${esc(t('twin.rebuild'))}</button>
+        <button class="btn secondary sm" id="rebuildBtn">${icon('refresh', { size: 15 })} ${esc(t('twin.rebuild'))}</button>
       </div>
     </header>
     <div class="row mb" style="gap:10px;flex-wrap:wrap">

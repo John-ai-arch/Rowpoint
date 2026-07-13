@@ -3,6 +3,7 @@
 // a weekly coaching review, and one-tap adaptation that re-tunes upcoming weeks
 // from real training — every change explained. Backed by /api/training/*.
 import { api, state, toast, esc, fmtDistance, fmtSplit } from '../api.js';
+import { icon } from '../icons.js';
 import { confirmDialog } from '../components/dialog.js';
 import { t } from '../i18n.js';
 
@@ -31,7 +32,7 @@ export async function renderPlan(el) {
       <p class="muted">${esc(plan.goalEvent || t('plan.subtitle'))}${plan.weeksToGoal != null ? ` · ${esc(t('plan.weeksToGoal', { n: plan.weeksToGoal }))}` : ''}</p>
     </header>
 
-    ${plan.coachNote ? `<div class="notice mb">🧑‍🏫 <strong>${esc(t('plan.coachNote'))}:</strong> ${esc(plan.coachNote)}</div>` : ''}
+    ${plan.coachNote ? `<div class="notice mb" style="display:flex;gap:9px;align-items:flex-start"><span style="color:var(--accent2);flex:none">${icon('user', { size: 18 })}</span><span><strong>${esc(t('plan.coachNote'))}:</strong> ${esc(plan.coachNote)}</span></div>` : ''}
 
     ${season ? seasonHtml(season) : ''}
 
@@ -82,7 +83,7 @@ export async function renderPlan(el) {
       const out = el.querySelector('#adaptOut');
       if (r.decisions.length) {
         out.innerHTML = `<div class="notice">${esc(r.message)}</div>` + r.decisions.map(d =>
-          `<div class="list-item"><div class="avatar" aria-hidden="true">⚙︎</div><div><strong>${esc(t('plan.wk'))} ${d.weekIndex + 1}: ${esc(d.change)}</strong>
+          `<div class="list-item"><span class="li-icon">${icon('gear', { size: 20 })}</span><div><strong>${esc(t('plan.wk'))} ${d.weekIndex + 1}: ${esc(d.change)}</strong>
           <div class="muted small">${esc(d.reason)}</div></div></div>`).join('');
         toast(r.message, 'success', 6000);
         setTimeout(() => renderPlan(el), 1400);
@@ -123,7 +124,7 @@ function seasonHtml(season) {
       </div>
       <div class="row" style="gap:4px">
         <button class="ghost sm" data-plan-race="${esc(r.name)}|${esc(r.raceDate)}">${esc(t('season.buildPlan'))}</button>
-        <button class="ghost sm" data-del-race="${esc(r.id)}">✕</button>
+        <button class="ghost sm icon-btn" data-del-race="${esc(r.id)}" aria-label="Remove race">${icon('close', { size: 15 })}</button>
       </div>
     </div>`).join('') : `<p class="muted small">${esc(t('season.empty'))}</p>`}
   </div>`;
@@ -174,7 +175,7 @@ function currentWeekHtml(week, idx) {
       <div class="right"><div class="stat-tile tight" style="min-width:120px"><div class="n">${fmtDistance(week.targetMeters)}</div><div class="l">${esc(t('plan.weeklyTarget'))}</div></div></div>
     </div>
     <p class="muted small">${esc(week.focus)}</p>
-    ${week.adaptationNote ? `<div class="notice small mb">⚙︎ ${esc(week.adaptationNote)}</div>` : ''}
+    ${week.adaptationNote ? `<div class="notice small mb" style="display:flex;gap:7px;align-items:flex-start"><span style="color:var(--muted);flex:none">${icon('gear', { size: 15 })}</span><span>${esc(week.adaptationNote)}</span></div>` : ''}
     <div class="mt">
       ${(week.sessions || []).map((s, i) => `<div class="list-item">
         <div class="avatar" aria-hidden="true" style="background:${PHASE_COLOR[s.zone === 'ut2' || s.zone === 'ut1' ? 'base' : s.zone === 'threshold' ? 'threshold' : 'peak']}22">${i + 1}</div>
@@ -197,16 +198,16 @@ function reviewHtml(r) {
       <div class="stat-tile tight"><div class="n"><span class="badge ${fitnessBadge}">${esc(phaseFitness(r.estimatedFitness))}</span></div><div class="l">${esc(t('plan.fitness'))}</div></div>
     </div>
     ${vv != null ? `<div class="pbar mt"><span style="width:${Math.min(100, vv)}%"></span></div><p class="small muted">${esc(t('plan.ofWeeklyTarget', { pct: vv }))}</p>` : ''}
-    ${listBlock(t('plan.strengths'), r.strengths, '✅')}
-    ${listBlock(t('plan.watch'), r.weaknesses, '⚠️')}
-    ${listBlock(t('plan.focusNext'), r.focusNextWeek, '🎯')}
+    ${listBlock(t('plan.strengths'), r.strengths, 'check-circle', 'var(--good)')}
+    ${listBlock(t('plan.watch'), r.weaknesses, 'warning', 'var(--warn)')}
+    ${listBlock(t('plan.focusNext'), r.focusNextWeek, 'target', 'var(--accent2)')}
   </div>`;
 }
 
-function listBlock(title, items, icon) {
+function listBlock(title, items, iconName, color) {
   if (!items || !items.length) return '';
   return `<div class="mt"><strong class="small">${esc(title)}</strong>
-    ${items.map(i => `<div class="small" style="display:flex;gap:6px;margin-top:4px"><span>${icon}</span><span>${esc(i)}</span></div>`).join('')}</div>`;
+    ${items.map(i => `<div class="small" style="display:flex;gap:7px;margin-top:4px;align-items:flex-start"><span style="color:${color};flex:none">${icon(iconName, { size: 15 })}</span><span>${esc(i)}</span></div>`).join('')}</div>`;
 }
 
 /* ---------------- create / regenerate ---------------- */

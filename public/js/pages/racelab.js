@@ -7,6 +7,7 @@
 // distributions, a leading-probability curve, sensitivity ranking, strategy
 // comparison — and a scrubbable computational replay of the median race.
 import { api, esc, toast, fmtDateTime } from '../api.js';
+import { icon } from '../icons.js';
 import { t } from '../i18n.js';
 
 let meta = null;
@@ -71,7 +72,7 @@ export async function renderRaceLab(el) {
       </div>
       <label class="small row" style="gap:6px;margin-top:8px"><input type="checkbox" id="rlTactics"> ${esc(t('race.tactics'))}</label>
       <label class="small row" style="gap:6px;margin-top:4px"><input type="checkbox" id="rlCompare"> ${esc(t('race.compareStrategies'))}</label>
-      <div class="mt"><button class="btn" id="rlRun">🏁 ${esc(t('race.run'))}</button></div>
+      <div class="mt"><button class="btn" id="rlRun">${icon('flag', { size: 16 })} ${esc(t('race.run'))}</button></div>
     </div>` : `
     <div class="card"><p class="muted">${esc(t('race.noData'))}</p></div>`}
     <div id="rlStatus"></div>
@@ -111,7 +112,7 @@ export async function renderRaceLab(el) {
     ? `<select data-arch="${i}">${Object.entries(meta.archetypes).map(([k, a]) => `<option value="${esc(k)}" ${o.archetype === k ? 'selected' : ''}>${esc(a.label)}</option>`).join('')}</select>`
     : `<input data-rname="${i}" placeholder="${esc(t('race.rivalName'))}" value="${esc(o.name || '')}" style="width:130px">
        <input data-r2k="${i}" type="number" placeholder="${esc(t('race.rival2k'))}" value="${o.erg2kSeconds || ''}" min="300" max="720" style="width:120px">`}
-        <button class="ghost sm" data-del="${i}" aria-label="${esc(t('common.remove'))}">✕</button>
+        <button class="ghost sm icon-btn" data-del="${i}" aria-label="${esc(t('common.remove'))}">${icon('close', { size: 15 })}</button>
       </div>`).join('');
     const laneCount = opponents.length + 1;
     laneSel.innerHTML = Array.from({ length: laneCount }, (_, i) =>
@@ -214,12 +215,12 @@ function renderRun(run, result) {
       ${s.strategyComparison ? `
       <h4 class="mt">${esc(t('race.strategyRanking'))}</h4>
       ${s.strategyComparison.map((x, i) => `<div class="row" style="gap:8px;padding:1px 0">
-        <span class="small" style="flex:1">${i === 0 ? '★ ' : ''}${esc(x.label)}</span>
+        <span class="small" style="flex:1">${i === 0 ? `<span style="color:var(--gold)">${icon('star', { size: 13 })}</span> ` : ''}${esc(x.label)}</span>
         <span class="small">${pct(x.winProb)}</span>
         <span class="muted small" style="width:64px;text-align:right">${fmtTime(x.medianS)}</span></div>`).join('')}
-      <p class="muted small">★ ${esc(t('race.bestStrategy'))}${best ? ` — ${esc(best.label)}` : ''}</p>` : ''}
+      <p class="muted small" style="display:flex;gap:5px;align-items:center"><span style="color:var(--gold)">${icon('star', { size: 13 })}</span> ${esc(t('race.bestStrategy'))}${best ? ` — ${esc(best.label)}` : ''}</p>` : ''}
 
-      <div class="mt"><button class="secondary" id="rlReplayBtn">▶ ${esc(t('race.replayOpen'))}</button></div>
+      <div class="mt"><button class="secondary" id="rlReplayBtn">${icon('play', { size: 15 })} ${esc(t('race.replayOpen'))}</button></div>
       <div id="rlReplay"></div>
 
       <h4 class="mt">${esc(t('race.whatIfTitle'))}</h4>

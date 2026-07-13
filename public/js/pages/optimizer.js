@@ -5,6 +5,7 @@
 // outcome ranges, sensitivity verdicts, and a what-if editor that evaluates
 // the athlete's own edits through the same computational yardstick.
 import { api, esc, toast, fmtDateTime } from '../api.js';
+import { icon } from '../icons.js';
 import { t } from '../i18n.js';
 
 const ZONE_COLORS = {
@@ -35,7 +36,7 @@ export async function renderOptimizer(el) {
           <select id="optHorizon">${meta.horizons.map(h => `<option value="${h}" ${h === 28 ? 'selected' : ''}>${h / 7} ${esc(t('opt.weeks'))}</option>`).join('')}</select></label>
         <label class="small">${esc(t('opt.strategy'))}<br>
           <select id="optStrategy">${meta.strategies.map(s => `<option value="${s}">${esc(s)}</option>`).join('')}</select></label>
-        <button class="btn" id="optRun">▶ ${esc(t('opt.run'))}</button>
+        <button class="btn" id="optRun">${icon('play', { size: 16 })} ${esc(t('opt.run'))}</button>
       </div>
       <p class="muted small" style="margin-bottom:0">${esc(t('opt.runNote'))}</p>
     </div>
@@ -201,7 +202,7 @@ function renderPlan(run, frontier, idx, detail) {
       box.innerHTML = `
         <div class="notice ${evaluation.valid ? '' : 'warn'}">
           <strong>${esc(t('opt.whatIfTitle'))}</strong>
-          ${evaluation.valid ? '' : `<div class="small">${evaluation.violations.slice(0, 3).map(v => `⚠ ${esc(v)}`).join('<br>')}</div>`}
+          ${evaluation.valid ? '' : `<div class="small">${evaluation.violations.slice(0, 3).map(v => `<span style="color:var(--warn)">${icon('warning', { size: 13 })}</span> ${esc(v)}`).join('<br>')}</div>`}
           ${evaluation.deltas ? `<div class="small mt">${Object.values(evaluation.deltas)
     .filter(d => Math.abs(d.delta) >= 0.1)
     .map(d => `${esc(d.label)}: <strong style="color:${d.better ? 'var(--good,#2f9e63)' : 'var(--bad,#d5453c)'}">${d.delta > 0 ? '+' : ''}${d.delta}</strong>`)

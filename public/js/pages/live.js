@@ -3,6 +3,7 @@
 // drives the live leaderboard; final standings persist and render here after
 // the session from leaderboard_entries.
 import { api, state, esc, fmtSplit, fmtDuration } from '../api.js';
+import { icon } from '../icons.js';
 import { subscribe, unsubscribe, onRealtime, requestRoster } from '../ws.js';
 
 export async function renderLive(el, assignmentId) {
@@ -23,13 +24,13 @@ export async function renderLive(el, assignmentId) {
   } catch { /* offline */ }
 
   el.innerHTML = `
-    <a href="${teamId ? `#/team/${teamId}` : '#/teams'}" class="small">← Team</a>
+    <a href="${teamId ? `#/team/${teamId}` : '#/teams'}" class="back-link">${icon('chevron-left', { size: 16 })} Team</a>
     <h1>${esc(workoutName)} <span class="badge blue">live</span></h1>
     <p class="muted small" id="liveStatus">Connecting to the live channel…</p>
     <div class="team-live-grid" id="grid"></div>
-    <div class="card"><h3>Leaderboard <span class="muted small">lowest average split wins</span></h3>
+    <div class="card"><div class="card-head"><span class="icon-chip sm gold">${icon('trophy', { size: 18 })}</span><h3>Leaderboard <span class="muted small" style="font-weight:500">lowest average split wins</span></h3></div>
       <div id="lb"><p class="muted small">Waiting for data…</p></div></div>
-    <div class="card tight"><p class="muted small">Rowers appear as they connect; tiles dim when a phone goes stale and show ✓ when a rower finishes. Standings persist here after the session ends.</p></div>`;
+    <div class="card tight"><p class="muted small">Rowers appear as they connect; tiles dim when a phone goes stale and mark a rower done when they finish. Standings persist here after the session ends.</p></div>`;
 
   function drawGrid() {
     const grid = el.querySelector('#grid');
@@ -37,7 +38,7 @@ export async function renderLive(el, assignmentId) {
     grid.innerHTML = arr.length ? arr.map(t => `
       <div class="rower-tile ${t.stale ? 'stale' : ''} ${t.metrics?.finished ? 'finished' : ''}">
         <div class="name">${esc(t.displayName)}
-          ${t.metrics?.finished ? '<span class="badge green">✓ done</span>' : t.connected === false ? '<span class="badge red">offline</span>' : t.stale ? '<span class="badge gray">stale</span>' : '<span class="badge blue">live</span>'}</div>
+          ${t.metrics?.finished ? `<span class="badge green">${icon('check', { size: 12 })} done</span>` : t.connected === false ? '<span class="badge red">offline</span>' : t.stale ? '<span class="badge gray">stale</span>' : '<span class="badge blue">live</span>'}</div>
         <div class="big">${fmtSplit(t.metrics?.paceS ?? t.metrics?.avgSplitS)}</div>
         <div class="sub"><span>${Math.round(t.metrics?.distanceM || 0)} m</span><span>${fmtDuration(t.metrics?.elapsedS || 0)}</span></div>
         <div class="sub"><span>${t.metrics?.strokeRate ?? '–'} s/m</span><span>${t.metrics?.heartRate ? t.metrics.heartRate + ' bpm' : ''}</span></div>

@@ -5,6 +5,7 @@
 // longitudinal trends — all aggregate, min-cohort gated, with explicit
 // observational-not-causal framing.
 import { api, state, esc, fmtDistance, fmtDate } from '../api.js';
+import { icon } from '../icons.js';
 import { drawDistribution, drawTrend } from '../components/charts.js';
 
 const VAR_LABEL = {
@@ -95,7 +96,7 @@ function draw(el, p, quality, dist, corr, trends) {
     <div class="card" id="discoveryCard"><h3>Scientific Discovery Engine</h3>
       <p class="muted small">Automated hypothesis screens over the longitudinal feature store: correlations, training archetypes, plateau analysis. Every candidate is exploratory, statistically gated (permutation p, bootstrap CI, BH correction), and waits here for your review — nothing auto-publishes.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
-        <button class="secondary sm" id="discRun">🔬 Run analysis</button>
+        <button class="secondary sm" id="discRun">${icon('lightbulb', { size: 15 })} Run analysis</button>
         <button class="ghost sm" id="discReport">Export approved findings</button>
         <span class="small muted" id="discStatus"></span>
       </div>
@@ -260,7 +261,7 @@ function findingCard(f) {
     </div>
     <p class="small" style="margin:6px 0">${esc(b.narrative || '')}</p>
     ${statLine ? `<div class="muted small">${esc(statLine)}</div>` : ''}
-    ${b.warnings?.length ? `<div class="small" style="color:var(--warn,#b8860b)">${b.warnings.map(w => `⚠ ${esc(w)}`).join('<br>')}</div>` : ''}
+    ${b.warnings?.length ? `<div class="small" style="color:var(--warn,#b8860b)">${b.warnings.map(w => `${icon('warning', { size: 13 })} ${esc(w)}`).join('<br>')}</div>` : ''}
     <details class="small mt"><summary class="muted">Confounders, limitations & follow-up</summary>
       ${(b.confounders || []).map(c => `<div>• ${esc(c)}</div>`).join('')}
       ${(b.limitations || []).map(c => `<div>• ${esc(c)}</div>`).join('')}
