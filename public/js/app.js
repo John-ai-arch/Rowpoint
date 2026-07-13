@@ -1,5 +1,5 @@
 // RowPoint SPA shell: hash router, top bar, tab nav, auth guard.
-import { state, loadMe, setSession, api, toast, esc } from './api.js';
+import { state, loadMe, setSession, api, toast, esc, ApiFail } from './api.js';
 import { startSyncWorker, pendingCount } from './offline.js';
 import { t, firstRunNeedsLanguage, setLocale, LOCALES } from './i18n.js';
 import { renderAuth } from './pages/auth.js';
@@ -141,19 +141,32 @@ async function wireNotifications() {
 
 export function openModal(html) {
   document.querySelector('.rp-modal')?.remove();
+  const prevFocus = document.activeElement;
   const wrap = document.createElement('div');
   wrap.className = 'rp-modal';
   wrap.setAttribute('role', 'dialog');
   wrap.setAttribute('aria-modal', 'true');
-  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(4,10,22,.66);backdrop-filter:blur(6px);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;';
-  wrap.innerHTML = `<div class="card" style="max-width:520px;width:100%;max-height:82vh;overflow:auto;">${html}
+  wrap.innerHTML = `<div class="card">${html}
     <div class="mt center"><button class="secondary" data-close>${esc(t('common.close'))}</button></div></div>`;
-  const close = () => wrap.remove();
-  wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.dataset.close !== undefined && e.target.hasAttribute('data-close')) close(); });
-  // Esc closes the modal (keyboard accessibility).
-  const onKey = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey); } };
-  document.addEventListener('keydown', onKey);
+  const close = () => {
+    document.removeEventListener('keydown', onKey, true);
+    wrap.remove();
+    if (prevFocus && typeof prevFocus.focus === 'function') prevFocus.focus();
+  };
+  // Esc closes; Tab cycles inside the modal (keyboard accessibility).
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); close(); }
+    if (e.key === 'Tab') {
+      const focusables = [...wrap.querySelectorAll('a[href], input, select, textarea, button')];
+      const i = focusables.indexOf(document.activeElement);
+      if (e.shiftKey && i <= 0) { e.preventDefault(); focusables[focusables.length - 1].focus(); }
+      else if (!e.shiftKey && i === focusables.length - 1) { e.preventDefault(); focusables[0].focus(); }
+    }
+  };
+  wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.hasAttribute('data-close')) close(); });
+  document.addEventListener('keydown', onKey, true);
   document.body.appendChild(wrap);
+  wrap.querySelector('[data-close]').focus();
   return wrap;
 }
 
@@ -173,7 +186,15 @@ async function route() {
     cleanup = await match.page(el, ...params) || null;
   } catch (e) {
     console.error(e);
-    el.innerHTML = `<div class="card"><h2>Something went wrong</h2><p class="muted">${esc(e.message)}</p></div>`;
+    // API errors already carry a human-written server message; show it. An
+    // unexpected JS crash must never surface its technical text to the user.
+    const friendly = e instanceof ApiFail
+      ? esc(e.message)
+      : esc(t('common.pageErrorBody'));
+    el.innerHTML = `<div class="card empty"><span class="ic" aria-hidden="true">😕</span>
+      <h2>${esc(t('common.somethingWrong'))}</h2>
+      <p class="muted">${friendly}</p>
+      <button class="secondary mt" onclick="location.reload()">${esc(t('common.retry'))}</button></div>`;
     try { await api('/users/me/health-events', { method: 'POST', body: { kind: 'client_error', detail: `route ${hash}: ${e.message}` } }); } catch { /* offline */ }
   }
 }

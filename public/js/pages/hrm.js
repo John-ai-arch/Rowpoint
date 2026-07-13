@@ -8,6 +8,7 @@ import {
   ZONE_COLORS, ZONE_NAMES,
 } from '../ble/sensors.js';
 import { drawHrSeries, drawTrend } from '../components/charts.js';
+import { promptDialog } from '../components/dialog.js';
 import { bluetoothHelpHtml } from '../ble/support.js';
 import { t } from '../i18n.js';
 
@@ -165,9 +166,9 @@ export async function renderHrm(el) {
       }
       drawMonitor();
     });
-    body.querySelectorAll('[data-rename]').forEach(b => b.onclick = () => {
-      const name = prompt('New name for this monitor:');
-      if (name) { renameDevice(b.dataset.rename, name); drawMonitor(); }
+    body.querySelectorAll('[data-rename]').forEach(b => b.onclick = async () => {
+      const name = await promptDialog('New name for this monitor:', { title: 'Rename monitor', confirmText: t('common.save') });
+      if (name?.trim()) { renameDevice(b.dataset.rename, name.trim()); drawMonitor(); }
     });
     body.querySelectorAll('[data-pref]').forEach(b => b.onclick = () => { preferDevice(b.dataset.pref); drawMonitor(); });
     body.querySelectorAll('[data-forget]').forEach(b => b.onclick = () => { forgetDevice(b.dataset.forget); drawMonitor(); });

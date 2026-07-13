@@ -4,6 +4,7 @@
 // explicit confidence. Coaches and athletes annotate; two analyses compare over
 // time. Video bytes stay client-side (object URL); the analysis is what's saved.
 import { api, state, toast, esc, fmtDate } from '../api.js';
+import { confirmDialog } from '../components/dialog.js';
 import { t } from '../i18n.js';
 
 export async function renderStroke(el) {
@@ -36,7 +37,7 @@ function drawList(el, analyses, modules) {
   el.querySelector('#newBtn').onclick = () => renderRecorder(el);
   el.querySelectorAll('[data-open]').forEach(b => b.onclick = () => renderDetail(el, b.dataset.open));
   el.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-    if (!confirm(t('stroke.deleteConfirm'))) return;
+    if (!(await confirmDialog(t('stroke.deleteConfirm'), { confirmText: t('common.delete'), danger: true }))) return;
     await api(`/stroke/${b.dataset.del}`, { method: 'DELETE' });
     toast(t('stroke.deleted'), 'success'); renderStroke(el);
   });
@@ -159,7 +160,7 @@ async function renderDetail(el, id) {
     </div>`;
 
   el.querySelector('#back').onclick = () => renderStroke(el);
-  el.querySelector('#del').onclick = async () => { if (!confirm(t('stroke.deleteConfirm'))) return; await api(`/stroke/${id}`, { method: 'DELETE' }); toast(t('stroke.deleted'), 'success'); renderStroke(el); };
+  el.querySelector('#del').onclick = async () => { if (!(await confirmDialog(t('stroke.deleteConfirm'), { confirmText: t('common.delete'), danger: true }))) return; await api(`/stroke/${id}`, { method: 'DELETE' }); toast(t('stroke.deleted'), 'success'); renderStroke(el); };
   el.querySelector('#annAdd').onclick = async () => {
     const body = el.querySelector('#annBody').value.trim();
     if (!body) return;

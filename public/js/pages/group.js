@@ -3,6 +3,7 @@
 // with roles, and analytics. Everything shown respects each member's own
 // privacy settings (enforced server-side).
 import { api, state, toast, esc, fmtSplit, fmtDistance, fmtDuration, fmtDate, fmtDateTime } from '../api.js';
+import { confirmDialog, promptDialog, chooseDialog } from '../components/dialog.js';
 import { subscribe, unsubscribe, onRealtime } from '../ws.js';
 
 const LB_GROUPS = [
@@ -81,7 +82,7 @@ export async function renderGroup(el, groupId) {
       toast(dash.muted ? 'Group muted — no more activity notifications.' : 'Notifications back on.');
     };
     el.querySelector('#leaveBtn').onclick = async () => {
-      if (!confirm('Leave this group?')) return;
+      if (!(await confirmDialog('Leave this group?', { title: 'Leave group', confirmText: 'Leave', danger: true }))) return;
       try { await api(`/groups/${groupId}/leave`, { method: 'POST' }); location.hash = '#/social'; }
       catch (e) { toast(e.message, 'error', 7000); }
     };
@@ -392,7 +393,7 @@ export async function renderGroup(el, groupId) {
       } catch (e) { toast(e.message, 'error'); }
     });
     body().querySelectorAll('[data-delgoal]').forEach(b => b.onclick = async () => {
-      if (!confirm('Delete this goal?')) return;
+      if (!(await confirmDialog('Delete this goal?', { confirmText: 'Delete', danger: true }))) return;
       await api(`/groups/${groupId}/goals/${b.dataset.delgoal}`, { method: 'DELETE' });
       showGoals();
     });
@@ -446,10 +447,9 @@ export async function renderGroup(el, groupId) {
     body().querySelector('#chatShare').onclick = async () => {
       const { workouts } = await api('/workouts/?limit=5');
       if (!workouts.length) { toast('No workouts to share yet.'); return; }
-      const pick = prompt(`Share which workout?\n${workouts.map((w, i) =>
-        `${i + 1}. ${Math.round(w.total_distance_m)}m in ${fmtDuration(w.total_time_s)} (${fmtDate(w.started_at)})`).join('\n')}`);
-      const idx = Number(pick) - 1;
-      if (idx >= 0 && idx < workouts.length) send({ kind: 'workout', workoutId: workouts[idx].id, body: body().querySelector('#chatInput').value.trim() });
+      const idx = await chooseDialog('Share which workout?', workouts.map(w =>
+        `${fmtDistance(w.total_distance_m)} in ${fmtDuration(w.total_time_s)} — ${fmtDate(w.started_at)}`), { title: 'Share a workout' });
+      if (idx !== null) send({ kind: 'workout', workoutId: workouts[idx].id, body: body().querySelector('#chatInput').value.trim() });
     };
   }
 
@@ -478,14 +478,15 @@ export async function renderGroup(el, groupId) {
     const root = body();
     root.querySelectorAll('[data-react]').forEach(b => b.onclick = () =>
       api(`/groups/${groupId}/messages/${b.dataset.react}/react`, { method: 'POST', body: { emoji: b.dataset.emoji } }).then(refreshChat));
-    root.querySelectorAll('[data-addreact]').forEach(b => b.onclick = () => {
-      const emoji = prompt('React with an emoji (e.g. 💪 🔥 👏):');
-      if (emoji) api(`/groups/${groupId}/messages/${b.dataset.addreact}/react`, { method: 'POST', body: { emoji: emoji.trim().slice(0, 8) } }).then(refreshChat);
+    const REACTIONS = ['💪', '🔥', '👏', '🎉', '❤️', '🚣', '😅', '🏆'];
+    root.querySelectorAll('[data-addreact]').forEach(b => b.onclick = async () => {
+      const idx = await chooseDialog(null, REACTIONS, { title: 'React', inline: true });
+      if (idx !== null) api(`/groups/${groupId}/messages/${b.dataset.addreact}/react`, { method: 'POST', body: { emoji: REACTIONS[idx] } }).then(refreshChat);
     });
     root.querySelectorAll('[data-pin]').forEach(b => b.onclick = () =>
       api(`/groups/${groupId}/messages/${b.dataset.pin}/pin`, { method: 'POST' }).then(showChat));
-    root.querySelectorAll('[data-delmsg]').forEach(b => b.onclick = () => {
-      if (confirm('Delete this message?')) api(`/groups/${groupId}/messages/${b.dataset.delmsg}`, { method: 'DELETE' }).then(refreshChat);
+    root.querySelectorAll('[data-delmsg]').forEach(b => b.onclick = async () => {
+      if (await confirmDialog('Delete this message?', { confirmText: 'Delete', danger: true })) api(`/groups/${groupId}/messages/${b.dataset.delmsg}`, { method: 'DELETE' }).then(refreshChat);
     });
   }
 
@@ -557,19 +558,19 @@ export async function renderGroup(el, groupId) {
       api(`/groups/${groupId}/join-requests/${b.dataset.deny}`, { method: 'POST', body: { approve: false } }).then(() => showMembers()));
     body().querySelectorAll('[data-role]').forEach(sel => sel.onchange = async () => {
       const role = sel.value;
-      if (role === 'owner' && !confirm('Transfer group ownership to this member? You become an admin.')) { showMembers(); return; }
+      if (role === 'owner' && !(await confirmDialog('Transfer group ownership to this member? You become an admin.', { title: 'Transfer ownership', confirmText: 'Transfer' }))) { showMembers(); return; }
       try { await api(`/groups/${groupId}/members/${sel.dataset.role}/role`, { method: 'POST', body: { role } }); toast('Role updated.', 'success'); }
       catch (e) { toast(e.message, 'error'); }
       if (role === 'owner') { dash = await api(`/groups/${groupId}`); shell(); tab = 'members'; }
       showMembers();
     });
     body().querySelectorAll('[data-kick]').forEach(b => b.onclick = async () => {
-      if (!confirm('Remove this member from the group?')) return;
+      if (!(await confirmDialog('Remove this member from the group?', { title: 'Remove member', confirmText: 'Remove', danger: true }))) return;
       try { await api(`/groups/${groupId}/members/${b.dataset.kick}`, { method: 'DELETE' }); showMembers(); }
       catch (e) { toast(e.message, 'error'); }
     });
     body().querySelectorAll('[data-rep]').forEach(b => b.onclick = async () => {
-      const reason = prompt('What\'s wrong? (e.g. harassment, spam)');
+      const reason = await promptDialog('What\'s wrong? (e.g. harassment, spam)', { title: 'Report member', confirmText: 'Send report', multiline: true });
       if (!reason) return;
       await api('/social/report', { method: 'POST', body: { userId: b.dataset.rep, groupId, reason } });
       toast('Report sent to the moderation team.', 'success');

@@ -241,3 +241,148 @@ Verified with the full suites (258 unit/API tests — 5 new — and 16 e2e).
 - The PM5/FTMS/HRM listener-hygiene fixes are unit-tested against fake
   GATT objects; behavior against physical machines still needs a
   real-device pass (PM5 + strap), including mid-workout drop/reconnect.
+
+---
+
+# Addendum — UX polish & workout-safety pass (2026-07-12, session 3)
+
+A third session focused on the two remaining §5.4 cosmetic gaps (native
+dialogs) and a fresh independent sweep for data-loss and error-leak paths.
+Verified with the full suites (**258** unit/API and **16** e2e passing) and a
+live browser walk on the dev server. No regressions.
+
+## Fixed
+
+1. **Native `confirm()` / `prompt()` eliminated (all 27 call sites).** A new
+   `public/js/components/dialog.js` provides Promise-based `confirmDialog`,
+   `promptDialog`, and `chooseDialog` styled like every other modal:
+   overlay + spring animation, danger styling for destructive actions,
+   `alertdialog` role, focus moved in and restored on close, a Tab focus
+   trap, Escape-to-cancel, and Enter-to-confirm on single-line prompts.
+   Migrated across teams, stroke, social, settings, plan, equipment, HR,
+   groups, and admin. Two awkward native `prompt()` flows were upgraded to
+   proper pickers: "share a workout to chat" and emoji reactions now use
+   `chooseDialog` (a tap list / emoji palette) instead of asking the user to
+   type an index or paste an emoji. `common.confirm` added to EN + DE; the HR
+   rename e2e test updated to drive the in-app dialog.
+
+2. **In-progress workouts can no longer be lost to a closed tab/app** (Phase 3
+   "never lose user work"). In-app navigation already auto-saved via page
+   teardown, but a tab close / reload / iOS app-kill unloaded the document
+   with no save. Added a `beforeunload` warning while a workout is unsaved and
+   a `pagehide` handler (the only reliable unload signal on iOS) that
+   synchronously queues a safety copy to the offline queue. The whole session
+   now carries **one stable workout id**, so if the safety copy syncs first,
+   the normal finish is treated as already-synced (the server dedups by id,
+   `workouts.js:28`) instead of creating a duplicate — verified end-to-end in
+   the browser (safety copy on `pagehide`; a following finish supersedes it;
+   exactly one workout persists; bfcache restore drops the copy).
+
+3. **Route-level crash handler no longer leaks technical text.** The SPA
+   error boundary showed the raw `Error.message` for any failure — fine for
+   server-authored API errors, but an unexpected JS crash surfaced text like
+   "Cannot read properties of undefined". It now shows the server message only
+   for `ApiFail`, and a friendly, retry-able empty-state (EN + DE) for
+   everything else; the raw detail still reaches telemetry.
+
+4. **`openModal` accessibility.** The shared modal now moves focus inside on
+   open, restores it to the trigger on close, traps Tab, and removes its
+   keydown listener on every close path (previously leaked on backdrop/close
+   clicks). Its inline positioning styles moved to `.rp-modal` in the
+   stylesheet, shared with the new dialogs.
+
+## Note
+
+- One duplicate test workout created while exercising the `pagehide` path in
+  the live demo database was removed (with its cascaded splits/force-curves
+  and derived inference/feature rows); the demo dataset is back to its prior
+  6-workout state.
+
+---
+
+# Addendum — Adversarial security verification (2026-07-12, session 4)
+
+An independent security pass that did **not** take the prior audits on trust:
+the auth/session/CSRF/RBAC modules and every dynamic-SQL site were re-read, and
+a live exploit battery was run against an isolated instance (throwaway DB) —
+IDOR, privilege escalation, mass-assignment, CSRF, injection, malformed/oversized
+input, rate limits, enumeration, and a functional account-deletion scan across
+all 69 tables. Verified with the full suites (**259** unit/API — 1 new — and
+**16** e2e).
+
+## Found & fixed
+
+1. **Login timing side channel → account enumeration (low).** `POST /auth/login`
+   ran the scrypt password check **only when the email existed**; unknown emails
+   returned without any hash work, so login latency (measured ~13% / several ms
+   slower for a real account, even with an identical 401 body) leaked which
+   emails are registered. Fix: a constant-time `verifyLogin()` in `util.js`
+   always performs one scrypt pass — against a random dummy hash when the account
+   is unknown or password-less — so response time no longer depends on account
+   existence. Confirmed by measurement: the systematic difference is gone
+   (patched delta within noise). Regression test added asserting the unknown-email
+   and wrong-password responses are byte-identical.
+
+## Verified secure (by live exploitation and/or code inspection)
+
+- **Access control / IDOR:** cross-user reads and writes of workouts, twin
+  state, workout notes, and team roster/assignment/member-removal all return
+  403/404; workout-id hijack returns 409. Non-admins are blocked (403) from
+  every `/admin/*` and `/research-admin/*` route.
+- **Privilege escalation / mass assignment:** `role`, `isAdmin`,
+  `email_verified`, `email`, `token_version`, and `best2kVerified` cannot be set
+  via signup or `PATCH /users/me` / `/training/profile` — the update statements
+  use an explicit column allowlist. A self-claimed 2k PB stays unverified.
+- **AuthN/session:** scrypt hashing; HMAC tokens with timing-safe compare and
+  token-version invalidation; logout and password-reset both invalidate every
+  existing token (verified live); no session before email verification; OAuth
+  verifies signature + `aud` + `email_verified` (Apple RS256 locally, Google via
+  tokeninfo).
+- **CSRF:** cookie-authenticated mutation without `X-CSRF-Token` → 403; wrong
+  token → 403; valid token → 200 (all verified live). Bearer and bootstrap paths
+  correctly exempt. WS upgrades check `Origin` for cookie auth.
+- **Injection:** all dynamic-SQL sites re-verified — every interpolated
+  identifier is a hard-coded literal, an internal enum/allowlist, or a
+  `sqlite_master` name; all user values are bound parameters. Live SQL payloads
+  in login/email produce a clean 401/400, never a 500.
+- **XSS / uploads:** shared `esc()` on all user strings into quoted attributes;
+  chat images are MIME-allowlisted data-URLs (no SVG) bounded to ~150 KB with no
+  disk write; no unescaped interpolation of user fields found.
+- **Input validation:** negative distance/time → 400; absurd overflow clamped;
+  future timestamps clamped; malformed JSON → 400; >4 MB body → 413; wellness
+  out-of-range sanitized (never a 500).
+- **Rate limiting:** all auth endpoints plus every expensive computational
+  endpoint (optimizer / regatta / discovery 6/h, twin rebuild 3/h) — the
+  optimizer limiter was observed firing at the 7th call.
+- **Account deletion (privacy):** a populated account was deleted and all 69
+  tables re-scanned — **every** personal row was gone (workouts, splits, wellness,
+  research_* pseudonymous rows, auth_events emails, feature_cache/inference_history
+  via cascade, athlete_state, predictions, jobs, notifications). Only
+  `computation_log` remains by design — an append-only record whose `user_id` no
+  longer resolves to any person.
+- **Config:** strict CSP (no inline scripts, `object-src 'none'`,
+  `frame-ancestors 'none'`), `X-Frame-Options: DENY`, HSTS in prod, `trust
+  proxy: 1` (X-Forwarded-For not spoofable), HttpOnly+Secure+SameSite=Lax
+  cookies, secrets generated 0600 outside the repo, `npm audit --omit=dev` 0
+  vulnerabilities (3 runtime deps), no secrets in client code, dev-only outbox
+  disabled in production, no PII in any AI prompt.
+
+## Residual notes (by design or low priority; not fixed)
+
+- **Signup returns 409 for an existing email** — a direct account-enumeration
+  vector that is an intentional UX choice ("account exists, sign in instead"),
+  documented in `auth.js`. Making signup enumeration-resistant would require an
+  email-first flow; left as a product decision.
+- **scrypt cost is N=2^14** (Node default / older OWASP minimum). Defensible, but
+  raising it needs per-hash parameter storage + rehash-on-login, since the
+  current `scrypt$salt$hash` format hard-codes N. Noted, not changed.
+- **`adhoc:` WebSocket channels** authorize on key-knowledge only (no membership
+  check). The client never creates them, so nothing sensitive is ever published
+  there; effectively dead code — candidate for removal.
+
+## Explicitly NOT verified here
+
+- Real-hardware BLE, native iOS/Android binaries, and production email
+  deliverability remain untestable from this environment (unchanged from prior
+  audits). Load/DoS behavior was checked only for per-endpoint rate limits, not
+  sustained high-concurrency load.

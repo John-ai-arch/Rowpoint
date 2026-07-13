@@ -27,6 +27,23 @@ export function verifyPassword(password, stored) {
   }
 }
 
+// A real scrypt hash of a random throwaway password, computed once at startup.
+// Login runs verifyPassword against this when the email is unknown (or the
+// account has no password) so the response takes the same ~scrypt time whether
+// or not the account exists — closing the timing side channel that would
+// otherwise let an attacker enumerate registered emails from login latency.
+const DUMMY_PASSWORD_HASH = hashPassword(crypto.randomBytes(24).toString('hex'));
+
+/**
+ * Constant-time credential check. Always performs one scrypt computation, so
+ * an unknown email and a wrong password are indistinguishable by timing.
+ * Returns true only for a real account whose password matches.
+ */
+export function verifyLogin(password, storedHash) {
+  if (!storedHash) { verifyPassword(password, DUMMY_PASSWORD_HASH); return false; }
+  return verifyPassword(password, storedHash);
+}
+
 /* ---------------- session tokens (HMAC-signed, stateless) ---------------- */
 
 const b64u = (buf) => Buffer.from(buf).toString('base64url');

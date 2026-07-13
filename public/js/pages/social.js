@@ -1,5 +1,6 @@
 // §4 — Social: exact-email search, connection requests, groups.
 import { api, state, toast, esc } from '../api.js';
+import { confirmDialog, promptDialog } from '../components/dialog.js';
 
 export async function renderSocial(el) {
   if (!state.user.emailVerified) {
@@ -92,12 +93,12 @@ export async function renderSocial(el) {
     toast('Connection removed.'); renderSocial(el);
   });
   el.querySelectorAll('[data-blk]').forEach(b => b.onclick = async () => {
-    if (!confirm('Block this user? They won\'t be able to find or contact you.')) return;
+    if (!(await confirmDialog('Block this user? They won\'t be able to find or contact you.', { title: 'Block user', confirmText: 'Block', danger: true }))) return;
     await api('/social/block', { method: 'POST', body: { userId: b.dataset.blk } });
     toast('Blocked.'); renderSocial(el);
   });
   el.querySelectorAll('[data-rep]').forEach(b => b.onclick = async () => {
-    const reason = prompt('What\'s wrong? (e.g. harassment, spam)');
+    const reason = await promptDialog('What\'s wrong? (e.g. harassment, spam)', { title: 'Report user', confirmText: 'Send report', multiline: true });
     if (!reason) return;
     await api('/social/report', { method: 'POST', body: { userId: b.dataset.rep, reason } });
     toast('Report sent to the moderation team.', 'success');
@@ -170,7 +171,8 @@ export async function renderSocial(el) {
         toast('Joined!', 'success'); location.hash = `#/group/${b.dataset.join}`;
       });
       out.querySelectorAll('[data-reqjoin]').forEach(b => b.onclick = async () => {
-        const message = prompt('Add a note for the group admins (optional):') || '';
+        const message = await promptDialog('Add a note for the group admins (optional):', { title: 'Request to join', confirmText: 'Send request' });
+        if (message === null) return;
         await api(`/groups/${b.dataset.reqjoin}/join-request`, { method: 'POST', body: { message } });
         toast('Request sent — an admin will review it.', 'success');
         b.outerHTML = '<span class="badge amber">request pending</span>';

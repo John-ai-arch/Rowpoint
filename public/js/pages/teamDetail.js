@@ -2,6 +2,7 @@
 // assignment, completion tracking, AI-suggestion review/override, live view.
 // Rower: assignments + leaderboards.
 import { api, state, toast, esc, fmtSplit, fmtDistance, fmtDuration, fmtDate } from '../api.js';
+import { confirmDialog, promptDialog } from '../components/dialog.js';
 import { describePlanText } from './builder.js';
 
 export async function renderTeamDetail(el, teamId) {
@@ -117,7 +118,7 @@ export async function renderTeamDetail(el, teamId) {
       } catch (e) { toast(e.message, 'error'); }
     });
     root.querySelectorAll('[data-remove]').forEach(b => b.onclick = async () => {
-      if (!confirm(`Remove ${b.dataset.name} from the team?`)) return;
+      if (!(await confirmDialog(`Remove ${b.dataset.name} from the team?`, { title: 'Remove member', confirmText: 'Remove', danger: true }))) return;
       await api(`/teams/${tid}/members/${b.dataset.remove}`, { method: 'DELETE' });
       toast('Removed.'); renderTeamDetail(el, tid);
     });
@@ -136,7 +137,7 @@ export async function renderTeamDetail(el, teamId) {
         await api(`/ai/suggestions/${b.dataset.appr}/override`, { method: 'POST', body: { approve: true } });
         toast('Approved.'); });
       root.querySelectorAll('[data-ovr]').forEach(b => b.onclick = async () => {
-        const note = prompt('Replace the AI suggestion with your own note to this rower:');
+        const note = await promptDialog('Replace the AI suggestion with your own note to this rower:', { title: 'Override suggestion', confirmText: 'Send note', multiline: true });
         if (note === null) return;
         await api(`/ai/suggestions/${b.dataset.ovr}/override`, { method: 'POST', body: { note } });
         toast('Overridden — the rower now sees your note instead.');

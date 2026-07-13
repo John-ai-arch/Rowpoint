@@ -460,11 +460,28 @@ canvas.chart { width: 100%; height: auto; background: var(--chart-bg); border-ra
 .empty .ic { font-size: 3rem; opacity: .5; margin-bottom: 12px; display: block; }
 .empty h3 { color: var(--text-dim); }
 
-/* --- modal (used by app.js openModal) --- */
-.rp-modal { animation: overlay-in .2s ease; }
-.rp-modal > .card { animation: modal-in .35s var(--ease-spring); box-shadow: var(--shadow-lg); border-color: var(--border); }
+/* --- modal (app.js openModal + components/dialog.js) --- */
+.rp-modal {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(4,10,22,.66); backdrop-filter: blur(6px);
+  animation: overlay-in .2s ease;
+}
+.rp-modal > .card { max-width: 520px; width: 100%; max-height: 82vh; overflow: auto; animation: modal-in .35s var(--ease-spring); box-shadow: var(--shadow-lg); border-color: var(--border); }
 @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-in { from { transform: translateY(18px) scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* --- confirm / prompt dialogs (components/dialog.js) --- */
+.rp-modal > .dialog-card { max-width: 400px; }
+.dialog-title { font-size: 1.12rem; margin-bottom: 6px; }
+.dialog-msg { color: var(--text-dim); white-space: pre-line; }
+.dialog-field { margin-top: 12px; }
+.dialog-field input, .dialog-field textarea { width: 100%; }
+.dialog-choices { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.dialog-choices .dialog-choice { text-align: left; justify-content: flex-start; }
+.dialog-choices.inline { flex-direction: row; flex-wrap: wrap; }
+.dialog-choices.inline .dialog-choice { font-size: 1.3rem; padding: 8px 12px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 
 /* --- pill / chip --- */
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: var(--radius-pill); background: var(--card2); border: 1px solid var(--border-soft); font-size: .82rem; font-weight: 600; }

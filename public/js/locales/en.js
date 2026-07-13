@@ -7,6 +7,7 @@ export const en = {
     loading: 'Loading…',
     save: 'Save',
     cancel: 'Cancel',
+    confirm: 'Confirm',
     close: 'Close',
     continue: 'Continue',
     back: 'Back',
@@ -26,6 +27,7 @@ export const en = {
     hours: 'hours',
     perWeek: '/ week',
     somethingWrong: 'Something went wrong',
+    pageErrorBody: "This screen didn't load properly. Your data is safe — try again in a moment.",
     offline: 'You appear to be offline. Your data is saved locally and will sync when you reconnect.',
   },
   nav: {

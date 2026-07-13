@@ -48,6 +48,10 @@ export async function renderRow(el) {
     lastSplitDistance: 0, lastSplitTime: 0, splitHr: [], splitRate: [], splitWatts: [],
     channel: assignmentId ? `team_workout:${assignmentId}` : null,
     liveEntries: new Map(), finishedSaved: false, lastPublish: 0, last: null,
+    // One stable id per session: a pagehide safety copy and the final save
+    // share it, so if the safety copy syncs first the server treats the final
+    // save as already-synced (idempotent) rather than a duplicate workout.
+    workoutId: uuidv4(), safetyQueued: false,
   };
 
   function header() {
@@ -302,29 +306,10 @@ export async function renderRow(el) {
   }
 
   /* ---- finish & save (offline-first, §6) ---- */
-  async function finish(discard = false) {
-    if (session.finishedSaved) return;
+  function buildPayload(hrSeries) {
     const m = session.last;
-    if (!m || (!m.distanceM && !m.elapsedS)) { toast('Nothing to save yet.', 'error'); return; }
-    session.finishedSaved = true;
-    session.adapter?.stop?.();
-
-    // trailing partial split
-    if (m.distanceM - session.lastSplitDistance > 25) {
-      const d = m.distanceM - session.lastSplitDistance;
-      const t = m.elapsedS - session.lastSplitTime;
-      session.splits.push({
-        distanceM: d, timeS: t, avgPaceSPer500m: (t / d) * 500,
-        avgStrokeRate: avg(session.splitRate), avgHeartRate: avg(session.splitHr), avgPowerWatts: avg(session.splitWatts),
-      });
-    }
-
-    // HR subsystem: every received sample was timestamped and recorded for
-    // this session; it ships with the workout so summaries stay in sync.
-    const hrSeries = hrManager.stopRecording();
-
-    const payload = {
-      id: uuidv4(),
+    return {
+      id: session.workoutId,
       startedAt: session.startTs || Math.floor(Date.now() / 1000) - Math.round(m.elapsedS || 0),
       endedAt: Math.floor(Date.now() / 1000),
       machineType: session.adapter?.machineType || 'rower',
@@ -343,6 +328,41 @@ export async function renderRow(el) {
           ? (session.adapter?.machineType === 'bike' ? 'ble_ftms' : 'ble_pm') : 'manual',
       },
     };
+  }
+
+  function dropQueued(id) {
+    const key = `rp_queue_${state.user.id}`;
+    try {
+      const q = JSON.parse(localStorage.getItem(key) || '[]').filter(x => x.payload.id !== id);
+      localStorage.setItem(key, JSON.stringify(q));
+    } catch { /* corrupt queue is rebuilt on next save */ }
+  }
+
+  async function finish(discard = false) {
+    if (session.finishedSaved) return;
+    const m = session.last;
+    if (!m || (!m.distanceM && !m.elapsedS)) { toast('Nothing to save yet.', 'error'); return; }
+    session.finishedSaved = true;
+    // The full save below supersedes any pagehide safety copy of this session
+    // (same id) — drop the local queue entry so it isn't replayed too.
+    if (session.safetyQueued) { dropQueued(session.workoutId); session.safetyQueued = false; }
+    session.adapter?.stop?.();
+
+    // trailing partial split
+    if (m.distanceM - session.lastSplitDistance > 25) {
+      const d = m.distanceM - session.lastSplitDistance;
+      const t = m.elapsedS - session.lastSplitTime;
+      session.splits.push({
+        distanceM: d, timeS: t, avgPaceSPer500m: (t / d) * 500,
+        avgStrokeRate: avg(session.splitRate), avgHeartRate: avg(session.splitHr), avgPowerWatts: avg(session.splitWatts),
+      });
+    }
+
+    // HR subsystem: every received sample was timestamped and recorded for
+    // this session; it ships with the workout so summaries stay in sync.
+    const hrSeries = hrManager.stopRecording();
+
+    const payload = buildPayload(hrSeries);
     queueWorkout(state.user.id, payload); // local first, always (§6)
     sessionStorage.removeItem('rp_draft_plan');
 
@@ -352,10 +372,7 @@ export async function renderRow(el) {
     after.innerHTML = `<div class="card"><h3>Saved ✓</h3><p class="muted small">Workout stored locally. Syncing…</p></div>`;
     try {
       const res = await api('/workouts/sync', { method: 'POST', body: payload });
-      // remove from queue since direct sync succeeded
-      const key = `rp_queue_${state.user.id}`;
-      const q = JSON.parse(localStorage.getItem(key) || '[]').filter(x => x.payload.id !== payload.id);
-      localStorage.setItem(key, JSON.stringify(q));
+      dropQueued(payload.id); // direct sync succeeded — no queue replay needed
       // Celebrate any achievements this workout just unlocked (toast + chime +
       // an in-card banner). No-op when nothing new was earned.
       const badgeBanner = celebrate(res.newBadges);
@@ -428,5 +445,39 @@ export async function renderRow(el) {
   }));
   if (ergManager.adapter) { session.adapter = ergManager.adapter; renderLiveShell(); }
 
-  return () => { endSession(false); unSt(); };
+  /* ---- never lose a workout to a closed tab (§ "never lose user work") ----
+     In-app navigation auto-saves via the cleanup below, but a tab close /
+     reload / app kill unloads the document. beforeunload warns the user
+     (where the browser supports it); pagehide — the only reliable unload
+     signal on iOS — synchronously queues a safety copy of the workout so far
+     to the offline queue, which syncs on the next launch. Returning from the
+     back/forward cache resumes the live session, so the safety copy is
+     dropped again (a normal finish supersedes it). */
+  const onBeforeUnload = (e) => {
+    if (session.started && !session.finishedSaved) { e.preventDefault(); e.returnValue = ''; }
+  };
+  const onPageHide = () => {
+    if (!session.started || session.finishedSaved || session.safetyQueued) return;
+    const m = session.last;
+    if (!m || (!m.distanceM && !m.elapsedS)) return;
+    // No side effects on the live session: HR keeps recording, splits keep
+    // accumulating — the copy just misses the HR series and trailing split.
+    queueWorkout(state.user.id, buildPayload(null));
+    session.safetyQueued = true;
+  };
+  const onPageShow = (e) => {
+    // Restored from bfcache: the live session resumed, so drop the safety copy;
+    // the eventual normal finish (same id) will save the complete workout.
+    if (e.persisted && session.safetyQueued) { dropQueued(session.workoutId); session.safetyQueued = false; }
+  };
+  window.addEventListener('beforeunload', onBeforeUnload);
+  window.addEventListener('pagehide', onPageHide);
+  window.addEventListener('pageshow', onPageShow);
+
+  return () => {
+    window.removeEventListener('beforeunload', onBeforeUnload);
+    window.removeEventListener('pagehide', onPageHide);
+    window.removeEventListener('pageshow', onPageShow);
+    endSession(false); unSt();
+  };
 }

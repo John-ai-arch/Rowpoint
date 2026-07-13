@@ -2,6 +2,7 @@
 // reminders, and per-erg usage totals from real workout history. CRUD over
 // /api/equipment.
 import { api, toast, esc, fmtDistance, fmtDate } from '../api.js';
+import { confirmDialog } from '../components/dialog.js';
 import { t } from '../i18n.js';
 
 const TYPES = ['erg', 'hrm', 'boat', 'oars', 'shoes', 'other'];
@@ -42,7 +43,7 @@ function draw(el, data) {
   el.querySelector('#addBtn').onclick = () => { editing = 'new'; renderForm(el, data); };
   el.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { editing = b.dataset.edit; renderForm(el, data); });
   el.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-    if (!confirm(t('equip.deleteConfirm'))) return;
+    if (!(await confirmDialog(t('equip.deleteConfirm'), { confirmText: t('common.delete'), danger: true }))) return;
     await api(`/equipment/${b.dataset.del}`, { method: 'DELETE' });
     toast(t('equip.deleted'), 'success');
     renderEquipment(el);

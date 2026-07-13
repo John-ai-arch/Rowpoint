@@ -11,7 +11,7 @@ import { rateLimit } from './ratelimit.js';
 import { authRequired, isAdminUser, isResearchAdmin, recordAuthEvent } from './middleware.js';
 import { setSessionCookies, clearSessionCookies, parseCookies, SESSION_COOKIE } from './cookies.js';
 import {
-  uuid, now, hashPassword, verifyPassword, signToken, teamCode,
+  uuid, now, hashPassword, verifyPassword, verifyLogin, signToken, teamCode,
   verificationCode, resetCode, hashResetCode, ApiError, badRequest,
   requireFields, isEmail, clampInt,
 } from './util.js';
@@ -285,7 +285,10 @@ authRouter.post('/login', rateLimit('login', 20, 15 * 60 * 1000), (req, res) => 
   requireFields(req.body || {}, ['email', 'password']);
   const email = String(req.body.email).trim().toLowerCase();
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user || !user.password_hash || !verifyPassword(String(req.body.password), user.password_hash)) {
+  // Constant-time: verifyLogin always runs one scrypt pass (against a dummy
+  // hash when the account is unknown or password-less), so login latency can't
+  // be used to enumerate which emails are registered.
+  if (!verifyLogin(String(req.body.password), user?.password_hash)) {
     recordAuthEvent('login_fail', { email, userId: user?.id, detail: user ? 'wrong password' : 'unknown email' });
     throw new ApiError(401, 'Incorrect email or password.', 'bad_credentials');
   }

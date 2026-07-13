@@ -71,9 +71,10 @@ test('Heart Rate Monitors is a primary nav section with full device management',
   await expect(page.locator('#hrZoneLbl')).toContainText('% of max'); // zone display
   await expect(page.locator('#hrLiveChart')).toBeVisible();
 
-  // saved-devices management: rename + prefer
-  page.on('dialog', d => d.accept('My Chest Strap'));
+  // saved-devices management: rename + prefer (styled in-app prompt dialog)
   await page.locator('[data-rename]').first().click();
+  await page.locator('.rp-modal #dlgInput').fill('My Chest Strap');
+  await page.locator('.rp-modal [data-confirm]').click();
   await expect(page.getByText('My Chest Strap').first()).toBeVisible();
   await page.screenshot({ path: 'shots/14-hr-monitor.png', fullPage: true });
   await page.close();

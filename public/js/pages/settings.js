@@ -2,6 +2,7 @@
 // deliberately separate from research), research toggle (§5.1), per-category
 // notifications (§14), CSV export (§14), full account deletion (§10.1(v)).
 import { api, state, setSession, toast, esc } from '../api.js';
+import { confirmDialog } from '../components/dialog.js';
 import { t, getLocale, setLocale, LOCALES } from '../i18n.js';
 import { soundEnabled, setSoundEnabled } from '../celebrate.js';
 
@@ -272,7 +273,7 @@ export function renderSettings(el) {
     if (el.querySelector('#delConfirm').value.trim().toLowerCase() !== 'delete') {
       toast('Type "delete" in the box to confirm.', 'error'); return;
     }
-    if (!confirm('Really delete your account and all data forever?')) return;
+    if (!(await confirmDialog('This permanently deletes your account, workouts, and every trace of your data. It cannot be undone.', { title: 'Delete your account?', confirmText: 'Delete forever', danger: true }))) return;
     try {
       await api('/users/me', { method: 'DELETE', body: { confirm: 'delete' } });
       localStorage.removeItem(`rp_queue_${u.id}`);

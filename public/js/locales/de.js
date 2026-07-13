@@ -8,6 +8,7 @@ export const de = {
     loading: 'Wird geladen…',
     save: 'Speichern',
     cancel: 'Abbrechen',
+    confirm: 'Bestätigen',
     close: 'Schließen',
     continue: 'Weiter',
     back: 'Zurück',
@@ -27,6 +28,7 @@ export const de = {
     hours: 'Stunden',
     perWeek: '/ Woche',
     somethingWrong: 'Etwas ist schiefgelaufen',
+    pageErrorBody: 'Diese Ansicht konnte nicht richtig geladen werden. Deine Daten sind sicher – versuche es gleich noch einmal.',
     offline: 'Du scheinst offline zu sein. Deine Daten werden lokal gespeichert und synchronisiert, sobald du wieder verbunden bist.',
   },
   nav: {

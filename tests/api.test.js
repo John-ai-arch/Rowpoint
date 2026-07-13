@@ -111,6 +111,18 @@ test('wrong password and duplicate email are rejected', async () => {
   assert.equal((await req('/auth/signup', { method: 'POST', body: { email: 'coach@test.com', password: 'password123', displayName: 'X', accountType: 'coach' } })).status, 409);
 });
 
+test('login gives an identical response for an unknown email and a wrong password (no enumeration)', async () => {
+  // Same status, error code, and message whether or not the account exists —
+  // and verifyLogin runs a scrypt pass on the unknown path too, so response
+  // latency does not leak account existence either (constant-time login).
+  const wrongPw = await req('/auth/login', { method: 'POST', body: { email: 'coach@test.com', password: 'definitely-wrong' } });
+  const unknown = await req('/auth/login', { method: 'POST', body: { email: 'no-such-account@test.com', password: 'definitely-wrong' } });
+  assert.equal(wrongPw.status, 401);
+  assert.equal(unknown.status, 401);
+  assert.equal(wrongPw.body.error, unknown.body.error);
+  assert.equal(wrongPw.body.message, unknown.body.message);
+});
+
 test('OAuth endpoints report unconfigured cleanly (501 with the REAL message, never "internal server error")', async () => {
   const g = await req('/auth/oauth/google', { method: 'POST', body: { idToken: 'x' } });
   assert.equal(g.status, 501);

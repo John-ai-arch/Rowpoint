@@ -1,6 +1,7 @@
 // Admin dashboard UI. Every request is re-authorized server-side against the
 // user's role (RBAC) on every call; this page is just a window onto that API.
 import { api, state, toast, esc, fmtDateTime, fmtDuration } from '../api.js';
+import { confirmDialog, promptDialog } from '../components/dialog.js';
 
 export async function renderAdmin(el) {
   if (!state.user?.isAdmin) {
@@ -180,8 +181,9 @@ export async function renderAdmin(el) {
         <div id="uDetail"></div></div>`;
       const refresh = () => body.querySelector('#uSearch').click();
       out.querySelector('#suspend')?.addEventListener('click', async () => {
-        const reason = prompt('Suspension reason:') || 'Suspended by admin';
-        await api(`/admin/users/${u.id}/suspend`, { method: 'POST', body: { suspend: true, reason } });
+        const reason = await promptDialog('Suspension reason:', { title: 'Suspend account', confirmText: 'Suspend' });
+        if (reason === null) return;
+        await api(`/admin/users/${u.id}/suspend`, { method: 'POST', body: { suspend: true, reason: reason || 'Suspended by admin' } });
         toast('Suspended.'); refresh();
       });
       out.querySelector('#reinstate')?.addEventListener('click', async () => {
@@ -190,12 +192,12 @@ export async function renderAdmin(el) {
       });
       out.querySelector('#uRole').onclick = async () => {
         const role = u.role === 'admin' ? 'user' : 'admin';
-        if (!confirm(`Set ${u.email} role to "${role}"?`)) return;
+        if (!(await confirmDialog(`Set ${u.email} role to "${role}"?`, { title: 'Change role' }))) return;
         try { await api(`/admin/users/${u.id}/role`, { method: 'POST', body: { role } }); toast(`Role set to ${role}.`, 'success'); refresh(); }
         catch (e) { toast(e.message, 'error'); }
       };
       out.querySelector('#uReset').onclick = async () => {
-        if (!confirm(`Reset ${u.email}'s password? A one-time temporary password will be shown once.`)) return;
+        if (!(await confirmDialog(`Reset ${u.email}'s password? A one-time temporary password will be shown once.`, { title: 'Reset password', confirmText: 'Reset' }))) return;
         const r = await api(`/admin/users/${u.id}/reset-password`, { method: 'POST' });
         out.querySelector('#uDetail').innerHTML = `<div class="notice mt">Temporary password (share securely, shown once): <code>${esc(r.temporaryPassword)}</code></div>`;
       };
@@ -221,7 +223,7 @@ export async function renderAdmin(el) {
         out.querySelector('#uDetail').innerHTML = `<div class="mt"><h3>Filed by this user</h3>${rows(filed, 'filed')}<h3>Against this user</h3>${rows(against, 'against them')}</div>`;
       };
       out.querySelector('#delUser')?.addEventListener('click', async () => {
-        if (!confirm(`Permanently delete ${u.email} and all their data (incl. research contributions)?`)) return;
+        if (!(await confirmDialog(`Permanently delete ${u.email} and all their data (incl. research contributions)? This cannot be undone.`, { title: 'Delete account', confirmText: 'Delete forever', danger: true }))) return;
         await api(`/admin/users/${u.id}`, { method: 'DELETE', body: { reason: 'manual deletion request' } });
         toast('Account deleted.'); out.innerHTML = '';
       });
@@ -599,8 +601,14 @@ export async function renderAdmin(el) {
           <button class="sm ghost" data-dis="${r.id}">Dismiss</button>
         </div></div>`).join('') : '<p class="muted">No open reports. 🎉</p>'}</div>`;
     const act = (id, action, note) => api(`/admin/reports/${id}/action`, { method: 'POST', body: { action, note } }).then(() => { toast('Done.'); showModeration(); });
-    body.querySelectorAll('[data-susp]').forEach(b => b.onclick = () => act(b.dataset.susp, 'suspend_target', prompt('Note:') || ''));
-    body.querySelectorAll('[data-note]').forEach(b => b.onclick = () => act(b.dataset.note, 'note', prompt('Action note:') || ''));
+    body.querySelectorAll('[data-susp]').forEach(b => b.onclick = async () => {
+      const note = await promptDialog('Note for the audit log:', { title: 'Suspend target', confirmText: 'Suspend' });
+      if (note !== null) act(b.dataset.susp, 'suspend_target', note);
+    });
+    body.querySelectorAll('[data-note]').forEach(b => b.onclick = async () => {
+      const note = await promptDialog('Action note:', { title: 'Resolve with note', confirmText: 'Resolve' });
+      if (note !== null) act(b.dataset.note, 'note', note);
+    });
     body.querySelectorAll('[data-dis]').forEach(b => b.onclick = () => act(b.dataset.dis, 'dismiss', ''));
   }
 

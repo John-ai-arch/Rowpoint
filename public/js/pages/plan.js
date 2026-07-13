@@ -3,6 +3,7 @@
 // a weekly coaching review, and one-tap adaptation that re-tunes upcoming weeks
 // from real training — every change explained. Backed by /api/training/*.
 import { api, state, toast, esc, fmtDistance, fmtSplit } from '../api.js';
+import { confirmDialog } from '../components/dialog.js';
 import { t } from '../i18n.js';
 
 const PHASE_COLOR = {
@@ -94,7 +95,7 @@ export async function renderPlan(el) {
   };
   el.querySelector('#regenBtn').onclick = () => renderCreate(el, plan, season);
   el.querySelector('#archiveBtn').onclick = async () => {
-    if (!confirm(t('plan.archiveConfirm'))) return;
+    if (!(await confirmDialog(t('plan.archiveConfirm'), { danger: true }))) return;
     await api('/training/plan', { method: 'DELETE' });
     toast(t('plan.archived'), 'success');
     renderPlan(el);
