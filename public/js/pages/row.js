@@ -481,7 +481,21 @@ export async function renderRow(el) {
   session.unsubs.push(hrManager.on('banner', ({ kind, text }) => {
     toast(text, kind === 'success' ? 'success' : 'error', 6000);
   }));
-  if (ergManager.adapter) { session.adapter = ergManager.adapter; renderLiveShell(); }
+  if (ergManager.adapter) {
+    // The erg stays connected app-wide; entering this page re-wires the
+    // session to it. This must mirror a fresh connect exactly: re-subscribe
+    // the metric/force streams (leaving the page removed those listeners)
+    // and push the selected plan — otherwise a workout chosen AFTER
+    // connecting would never reach the monitor and the PM5 would sit in
+    // Just Row while the app "tracked" the plan on its own.
+    session.adapter = ergManager.adapter;
+    session.unsubs.push(session.adapter.onMetrics(onMetrics));
+    session.unsubs.push(session.adapter.onForceCurve(onForce));
+    renderLiveShell();
+    if (plan) pushPlan(false);
+    if (session.channel) joinLive();
+    maybeExplainHrForward();
+  }
 
   /* ---- never lose a workout to a closed tab (§ "never lose user work") ----
      In-app navigation auto-saves via the cleanup below, but a tab close /

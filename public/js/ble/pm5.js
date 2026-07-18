@@ -33,12 +33,14 @@ const CH = {
   HR_WRITE:        'ce060041-43e5-11e4-916c-0800200c9a66',
 };
 
-// PM5 workout type the monitor should report after each plan type lands
+// PM5 workout types the monitor may report after each plan type lands
 // (general status byte 6) — used to VERIFY the program actually took effect.
+// Both the splits and no-splits variants count: which one the firmware
+// reports is cosmetic, the programmed piece is the same.
 const EXPECTED_WORKOUT_TYPE = {
-  justrow: [CSAFE.WT_JUSTROW_SPLITS, 0x00],
-  time: [CSAFE.WT_FIXEDTIME_SPLITS],
-  distance: [CSAFE.WT_FIXEDDIST_SPLITS],
+  justrow: [0x00, CSAFE.WT_JUSTROW_SPLITS],
+  time: [0x04, CSAFE.WT_FIXEDTIME_SPLITS],
+  distance: [0x02, CSAFE.WT_FIXEDDIST_SPLITS],
   calories: [CSAFE.WT_FIXEDCALORIE_SPLITS],
   intervals: [CSAFE.WT_VARIABLE_INTERVAL],
 };
@@ -48,6 +50,24 @@ const STROKESTATE_RECOVERY = 4;
 const u16le = (dv, o) => dv.getUint16(o, true);
 const u24le = (dv, o) => dv.getUint8(o) | (dv.getUint8(o + 1) << 8) | (dv.getUint8(o + 2) << 16);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+/* ---- diagnostic trace -----------------------------------------------------
+   Every workout-programming exchange is recorded AND printed to the console:
+   the plan, each CSAFE frame as hex, write success/failure, the PM5's
+   response frame + status byte, and the final on-monitor verification — so a
+   failed real-hardware attempt pinpoints its own cause. High-volume events
+   (raw notifications, HR writes, force polls) print only when
+   localStorage.rp_ble_debug === '1', but everything lands in the ring buffer
+   (window.RowPointBLE.log) for support dumps. */
+export const bleLog = [];
+const hexStr = (bytes) => [...bytes].map(b => b.toString(16).padStart(2, '0')).join(' ');
+function logBle(event, detail = {}, quiet = false) {
+  bleLog.push({ t: new Date().toISOString(), event, ...detail });
+  if (bleLog.length > 300) bleLog.shift();
+  const verbose = typeof localStorage !== 'undefined' && localStorage.getItem('rp_ble_debug') === '1';
+  if (!quiet || verbose) console.info(`[pm5] ${event}`, detail);
+}
+if (typeof window !== 'undefined') window.RowPointBLE = { log: bleLog };
 
 /**
  * Build the 20-byte packet for the PM heart-rate receive characteristic
@@ -172,7 +192,7 @@ export class Concept2PM5Adapter {
         this.forceCurveMode = 'notify';
       } catch (e) {
         this.forceCurveMode = 'unsupported'; // upgraded to 'poll' below if control exists
-        console.warn('[pm5] force curve characteristic unavailable:', e?.message || e);
+        logBle('force:characteristic-unavailable', { error: String(e?.message || e) });
       }
     }
 
@@ -196,6 +216,12 @@ export class Concept2PM5Adapter {
         reason: /security|not allowed|permission/i.test(String(e)) ? 'permission' : 'unsupported',
       };
     }
+    logBle('connect:capabilities', {
+      machineId: this.machineId,
+      controlService: !!this._ctrlTx,
+      forceCurveMode: this.forceCurveMode,
+      hrForward: { ...this.hrForward },
+    });
 
     // Stable handler ref + remove-before-add: the browser reuses the same
     // BluetoothDevice object across connect cycles, so an anonymous listener
@@ -312,7 +338,7 @@ export class Concept2PM5Adapter {
     if (prev === this.live.strokeState || this.live.strokeState !== STROKESTATE_RECOVERY) return;
     if (this.forceCurveMode === 'notify' && !this._forceNotifySeen) {
       if (++this._recoveriesWithoutForce >= 4 && this._ctrlTx) {
-        console.warn('[pm5] no force-curve notifications after 4 strokes — falling back to CSAFE polling');
+        logBle('force:fallback-to-poll', { reason: 'no 0x003D notifications after 4 strokes' });
         this.forceCurveMode = 'poll';
       }
     }
@@ -333,6 +359,7 @@ export class Concept2PM5Adapter {
       curve.push(...plot.samples);
       if (plot.bytesRead < 20) break;
     }
+    logBle('force:poll-complete', { samples: curve.length }, true);
     if (curve.length >= 4) for (const fn of this.forceListeners) fn(curve);
   }
 
@@ -349,18 +376,24 @@ export class Concept2PM5Adapter {
       if (b === CSAFE.STOP && this._rxBuf.length > 2) {
         const frame = Uint8Array.from(this._rxBuf);
         this._rxBuf = [];
-        this._dispatchResponse(parseFrame(frame));
+        this._dispatchResponse(frame);
       }
       if (this._rxBuf.length > 256) this._rxBuf = []; // never grow unbounded
     }
   }
 
-  _dispatchResponse(parsed) {
-    if (!parsed) return;
+  _dispatchResponse(frame) {
+    const parsed = parseFrame(frame);
+    if (!parsed) { logBle('rx:unparseable', { hex: hexStr(frame) }); return; }
     // Route by content: force-plot responses echo the 0x1A wrapper with the
     // GET_FORCEPLOTDATA command id; everything else answers programming.
     const isForce = parsed.payload[0] === CSAFE.SETUSERCFG1
       && parsed.payload.includes(CSAFE.PM_GET_FORCEPLOTDATA);
+    logBle(isForce ? 'rx:forceplot' : 'rx:response', {
+      hex: hexStr(frame),
+      status: `0x${parsed.status?.toString(16)}`,
+      checksumValid: parsed.valid,
+    }, isForce);
     const slot = isForce ? '_pendingForce' : '_pendingProgram';
     const pending = this[slot];
     if (pending) { this[slot] = null; clearTimeout(pending.timer); pending.resolve(parsed); }
@@ -403,13 +436,27 @@ export class Concept2PM5Adapter {
 
   async sendWorkout(plan) {
     if (!this._ctrlTx) {
+      logBle('program:no-control-service', {});
       throw new Error('This monitor does not expose the Concept2 control service, so workouts cannot be programmed onto it. Update the PM5 firmware with the Concept2 Utility, or start the workout from the monitor.');
     }
     this._programming = true;
+    logBle('program:start', {
+      plan: JSON.parse(JSON.stringify(plan ?? { type: 'justrow' })),
+      characteristic: CH.CTRL_TX,
+    });
     try {
+      // The workout state decides whether we must terminate first, and right
+      // after connecting the first general-status notification (which carries
+      // it) may not have arrived yet — give it a moment instead of guessing.
+      if (!Number.isFinite(this.live.workoutState)) {
+        const until = Date.now() + 1200;
+        while (!Number.isFinite(this.live.workoutState) && Date.now() < until) await sleep(100);
+      }
+
       // A monitor mid-workout (or sitting on a finished-workout summary)
       // rejects new programming — terminate first, exactly as ErgData does.
       if (Number.isFinite(this.live.workoutState) && this.live.workoutState !== 0) {
+        logBle('program:terminate-first', { workoutState: this.live.workoutState, hex: hexStr(encodeTerminateWorkout()) });
         const res = await this._csafeRequest(encodeTerminateWorkout(), 'program', 3000);
         if (res === null) throw new Error('The monitor did not acknowledge ending its current workout. Press Menu on the PM5, then send the workout again.');
         await sleep(150);
@@ -418,14 +465,18 @@ export class Concept2PM5Adapter {
       const frames = encodeWorkout(plan);
       for (let i = 0; i < frames.length; i++) {
         if (i > 0) await sleep(MIN_INTERFRAME_GAP_MS + 10); // spec: ≥50 ms between frames
+        logBle('program:tx', { frame: `${i + 1}/${frames.length}`, bytes: frames[i].length, hex: hexStr(frames[i]) });
         const parsed = await this._csafeRequest(frames[i], 'program', 3000);
         if (parsed === null) {
+          logBle('program:ack-timeout', { frame: `${i + 1}/${frames.length}` });
           throw new Error('Timed out waiting for the monitor to acknowledge the workout. Check the PM5 is awake and still connected, then try again.');
         }
         if (!parsed.valid) {
+          logBle('program:ack-corrupt', { frame: `${i + 1}/${frames.length}` });
           throw new Error('The monitor sent a corrupted acknowledgement (checksum mismatch). Move closer to the PM5 and try again.');
         }
         const err = describeMachineStatus(parsed.status);
+        logBle('program:ack', { frame: `${i + 1}/${frames.length}`, status: `0x${parsed.status.toString(16)}`, machineError: err });
         if (err) {
           // The machine's validation is authoritative (§1.3) — surface it as-is.
           const e = new Error(err);
@@ -443,7 +494,11 @@ export class Concept2PM5Adapter {
         if (expected.includes(this.live.workoutType)) { verified = true; break; }
         await sleep(200);
       }
+      logBle('program:done', { verified, monitorWorkoutType: this.live.workoutType, monitorWorkoutState: this.live.workoutState });
       return { verified, workoutType: this.live.workoutType };
+    } catch (e) {
+      logBle('program:failed', { error: String(e?.message || e) });
+      throw e;
     } finally {
       this._programming = false;
     }
@@ -465,11 +520,11 @@ export class Concept2PM5Adapter {
     this._hrWriteBusy = true;
     this._hrLastWrite = now;
     this._enqueue(() => this._hrChar.writeValueWithResponse(buildHrPacket(bpm, extras)))
-      .then(() => { this._hrFailures = 0; })
+      .then(() => { this._hrFailures = 0; logBle('hr:tx', { bpm: Math.round(bpm) }, true); })
       .catch((e) => {
         if (++this._hrFailures >= 3) {
           this.hrForward = { supported: false, reason: 'write_failed' };
-          console.warn('[pm5] heart-rate forwarding disabled after repeated write failures:', e?.message || e);
+          logBle('hr:forwarding-disabled', { error: String(e?.message || e) });
         }
       })
       .finally(() => { this._hrWriteBusy = false; });
