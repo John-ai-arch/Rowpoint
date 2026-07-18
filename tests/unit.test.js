@@ -10,7 +10,11 @@ const { analyzeWorkouts, classifyWorkoutZone, ZONES } = await import('../server/
 const { fallbackRecommendation, generateRecommendation, defaultPlanFor, CATEGORIES, templateFeedbackText, phraseFeedback } = await import('../server/ai/coach.js');
 const { classifyPacing, classifyIntervals, PACING } = await import('../server/ai/pacing.js');
 const { validatePlan } = await import('../server/ai/planValidation.js');
-const { buildFrame, parseFrame, encodeWorkout } = await import('../public/js/ble/csafe.js');
+const {
+  buildFrame, parseFrame, encodeWorkout, encodeTerminateWorkout,
+  encodeForcePlotRequest, parseForcePlotResponse, describeMachineStatus, CSAFE,
+} = await import('../public/js/ble/csafe.js');
+const { buildHrPacket, parseForceCurveNotification } = await import('../public/js/ble/pm5.js');
 const { parseHrMeasurement, BleHeartRateMonitor } = await import('../public/js/ble/sensors.js');
 const { FTMSAdapter } = await import('../public/js/ble/ftms.js');
 const { sanitizeHrSeries, hrSummary, zoneIndex, effectiveMaxHr } = await import('../server/hr.js');
@@ -267,6 +271,139 @@ test('encodeWorkout emits frames for all plan types', () => {
     assert.ok(frames[0] instanceof Uint8Array);
     assert.equal(frames[0][0], 0xF1);
   }
+});
+
+/* ---- Golden frames from the Concept2 PM CSAFE Communication Definition
+   rev 0.27, "Proprietary CSAFE Workout Configuration" worked examples —
+   these sequences are exactly what ErgData sends to program the monitor. */
+
+const hex = (u8) => [...u8].map(b => b.toString(16).padStart(2, '0')).join(' ');
+
+test('encodeWorkout matches the spec JustRow example byte-for-byte', () => {
+  assert.equal(hex(encodeWorkout({ type: 'justrow' })[0]),
+    'f1 76 07 01 01 01 13 02 01 01 61 f2');
+});
+
+test('encodeWorkout matches the spec fixed-distance 2000m example byte-for-byte', () => {
+  // 2000 m with 400 m splits: big-endian values, 0x76 wrapper, closed with
+  // CONFIGURE_WORKOUT + SET_SCREENSTATE(workout, prepare-to-row).
+  assert.equal(hex(encodeWorkout({ type: 'distance', distanceM: 2000 })[0]),
+    'f1 76 18 01 01 03 03 05 80 00 00 07 d0 05 05 80 00 00 01 90 14 01 01 13 02 01 01 28 f2');
+});
+
+test('encodeWorkout matches the spec fixed-time 20:00 example byte-for-byte', () => {
+  assert.equal(hex(encodeWorkout({ type: 'time', durationS: 1200 })[0]),
+    'f1 76 18 01 01 05 03 05 00 00 01 d4 c0 05 05 00 00 00 5d c0 14 01 01 13 02 01 01 e0 f2');
+});
+
+test('encodeWorkout variable-interval frame matches the spec example structure', () => {
+  // Spec example: v500m/1:00r, 3:00/0:00r, 1000m/0:00r, 5:00/2:00r @1:40 pace.
+  const frames = encodeWorkout({ type: 'intervals', intervals: [
+    { workType: 'distance', workDistanceM: 500, restTimeS: 60, targetPaceS: 100 },
+    { workType: 'time', workTimeS: 180, restTimeS: 0, targetPaceS: 100 },
+    { workType: 'distance', workDistanceM: 1000, restTimeS: 0, targetPaceS: 100 },
+    { workType: 'time', workTimeS: 300, restTimeS: 120, targetPaceS: 100 },
+  ] });
+  assert.equal(frames.length, 1);
+  // Contents exactly as listed in the spec's per-byte table (its printed
+  // checksum contradicts its own bytes, so assert the XOR instead).
+  assert.equal(hex(frames[0].slice(0, frames[0].length - 2)),
+    'f1 76 6f 18 01 00 01 01 08 17 01 01 03 05 80 00 00 01 f4 04 02 00 3c 06 04 00 00 27 10 14 01 01'
+    + ' 18 01 01 17 01 00 03 05 00 00 00 46 50 04 02 00 00 06 04 00 00 27 10 14 01 01'
+    + ' 18 01 02 17 01 01 03 05 80 00 00 03 e8 04 02 00 00 06 04 00 00 27 10 14 01 01'
+    + ' 18 01 03 17 01 00 03 05 00 00 00 75 30 04 02 00 78 06 04 00 00 27 10 14 01 01'
+    + ' 13 02 01 01');
+  const parsed = parseFrame(frames[0]);
+  assert.ok(parsed.valid, 'checksum must be self-consistent');
+});
+
+test('encodeWorkout chunks long interval lists into ≤120-byte frames, screen-state only at the end', () => {
+  const frames = encodeWorkout({ type: 'intervals', intervals:
+    Array.from({ length: 30 }, (_, i) => ({ workType: 'distance', workDistanceM: 500 + i, restTimeS: 60 })) });
+  assert.ok(frames.length > 1);
+  const indices = [];
+  frames.forEach((f, fi) => {
+    assert.ok(f.length <= 120, `frame ${fi} is ${f.length} bytes`);
+    const p = parseFrame(f);
+    assert.ok(p.valid);
+    // parseFrame treats command frames as [status, ...]; reconstruct contents:
+    const contents = [p.status, ...p.payload];
+    assert.equal(contents[0], 0x76, 'C2 proprietary wrapper');
+    assert.equal(contents[1], contents.length - 2, 'wrapper byte count');
+    for (let i = 2; i < contents.length;) {
+      const cmd = contents[i], len = contents[i + 1];
+      if (cmd === CSAFE.PM_SET_WORKOUTINTERVALCOUNT) indices.push(contents[i + 2]);
+      if (cmd === CSAFE.PM_SET_SCREENSTATE) {
+        assert.equal(fi, frames.length - 1, 'screen state only in the final frame');
+        assert.equal(i + 2 + len, contents.length, 'screen state is the last command');
+      }
+      i += 2 + len;
+    }
+  });
+  assert.deepEqual(indices, Array.from({ length: 30 }, (_, i) => i), 'contiguous interval indices');
+  // First frame must declare the variable-interval workout type.
+  const first = parseFrame(frames[0]);
+  assert.ok([first.status, ...first.payload].join(',').includes([CSAFE.PM_SET_WORKOUTTYPE, 1, CSAFE.WT_VARIABLE_INTERVAL].join(',')));
+});
+
+test('terminate + force-plot request frames match the spec examples', () => {
+  const term = encodeTerminateWorkout();
+  assert.equal(hex(term.slice(0, term.length - 2)), 'f1 76 04 13 02 01 02');
+  assert.ok(parseFrame(term).valid);
+  // Spec "Get Force Curve" example: F1 1A 03 6B 01 14 67 F2
+  assert.equal(hex(encodeForcePlotRequest(20)), 'f1 1a 03 6b 01 14 67 f2');
+});
+
+test('describeMachineStatus reads the CSAFE Table 9 status bits', () => {
+  assert.equal(describeMachineStatus(0x81), null);            // OK, ready state
+  assert.equal(describeMachineStatus(0x01), null);            // OK (toggle 0)
+  assert.match(describeMachineStatus(0x91), /rejected/);      // prev frame rejected
+  assert.match(describeMachineStatus(0x21), /corrupted|read/); // bad frame
+  assert.match(describeMachineStatus(0xB1), /busy/);          // not ready
+  assert.match(describeMachineStatus(0x80), /error/i);        // error state nibble
+});
+
+/* ---------------- PM5 heart-rate forwarding + force curve parsing ---------------- */
+
+test('buildHrPacket lays out the 20-byte PM heart-rate packet (CSAFE spec 0x0041)', () => {
+  const p = buildHrPacket(152, { rrMs: 400 });
+  assert.equal(p.length, 20);
+  assert.equal(p[0], 0);                       // BT source
+  assert.equal(p[5] | (p[6] << 8), 152);       // HR value LE
+  assert.equal(p[3] | (p[4] << 8), Math.round(400 * 1024 / 1000)); // RR in 1/1024 s
+  assert.equal(p[7], 0x11);                    // flags: 16-bit HR + RR present
+  const noRr = buildHrPacket(70);
+  assert.equal(noRr[7], 0x01);
+  assert.equal(noRr[3] | (noRr[4] << 8), 0);
+});
+
+test('parseForceCurveNotification assembles a curve across chunks (BLE spec 0x003D)', () => {
+  const dv = (...bytes) => new DataView(Uint8Array.from(bytes).buffer);
+  const accum = [];
+  // Curve of 12 words in 2 chunks: byte0 = (total chunks << 4) | words here.
+  const chunk0 = dv(0x29, 0, 10, 0, 20, 0, 30, 0, 40, 0, 50, 0, 60, 0, 70, 0, 80, 0, 90, 0);
+  const chunk1 = dv(0x23, 1, 100, 0, 90, 0, 40, 0);
+  assert.equal(parseForceCurveNotification(chunk0, accum), null);
+  assert.equal(accum.length, 9);
+  const curve = parseForceCurveNotification(chunk1, accum);
+  assert.deepEqual(curve, [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 90, 40]);
+  assert.equal(accum.length, 0, 'accumulator resets after emitting');
+  // A fresh curve starting at sequence 0 discards any stale partial data.
+  accum.push(999);
+  assert.equal(parseForceCurveNotification(chunk0, accum), null);
+  assert.deepEqual(accum.slice(0, 2), [10, 20]);
+});
+
+test('parseForcePlotResponse decodes the spec example response payload', () => {
+  // Response payload (after status): 1A 23 6B 21 14 <20 data bytes + padding>
+  const payload = [0x1A, 0x23, 0x6B, 0x21, 0x14,
+    0x41, 0x00, 0x41, 0x00, 0x79, 0x00, 0xAE, 0x00, 0xB8, 0x00,
+    0xB9, 0x00, 0xBA, 0x00, 0xB9, 0x00, 0xB9, 0x00, 0xB6, 0x00,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const res = parseForcePlotResponse(payload);
+  assert.equal(res.bytesRead, 20);
+  assert.deepEqual(res.samples, [0x41, 0x41, 0x79, 0xAE, 0xB8, 0xB9, 0xBA, 0xB9, 0xB9, 0xB6]);
+  assert.equal(parseForcePlotResponse([0x76, 0x05, 0x01]), null);
 });
 
 /* ---------------- HR measurement parsing (Bluetooth SIG HRM profile) ---------------- */

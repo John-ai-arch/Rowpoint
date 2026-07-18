@@ -110,6 +110,7 @@ export async function renderRow(el) {
         if (plan) await pushPlan(false);
         if (session.channel) joinLive();
         connButtons(); renderLiveShell(); updateConnState();
+        maybeExplainHrForward();
       });
       el.querySelector('#connectBtn')?.addEventListener('click', () => connect('auto'));
       el.querySelector('#simBtn').onclick = () => pickSimProfile();
@@ -145,6 +146,7 @@ export async function renderRow(el) {
       }
       connButtons();
       renderLiveShell();
+      maybeExplainHrForward();
     } catch (e) {
       const err = ergManager.error;
       el.querySelector('#connError').innerHTML = `<div class="notice warn mt"><strong>${esc(err?.code === 'machine_busy' ? 'Machine in use' : 'Couldn\'t connect')}</strong><br>${esc(err?.message || e.message)}</div>`;
@@ -160,8 +162,12 @@ export async function renderRow(el) {
     if (!v.ok) { box.innerHTML = `<div class="notice warn mt">${esc(v.error)}</div>`; return; }
     if (!session.adapter) { if (manual) toast('Connect to a machine first.', 'error'); return; }
     try {
-      await session.adapter.sendWorkout(plan);
-      box.innerHTML = `<div class="notice mt"><span style="color:var(--good)">${icon('check', { size: 15 })}</span> Workout programmed on the monitor. ${session.adapter.kind === 'pm5' ? 'Press start on the PM5 or just row.' : ''}</div>`;
+      const res = await session.adapter.sendWorkout(plan);
+      // The adapter verifies against the monitor's own reported workout type —
+      // phrase the confirmation honestly instead of assuming success.
+      box.innerHTML = res?.verified === false
+        ? `<div class="notice warn mt">The monitor acknowledged the workout but hasn't switched to it yet — check the PM5 screen. If it still shows a menu, press Menu on the monitor and send again.</div>`
+        : `<div class="notice mt"><span style="color:var(--good)">${icon('check', { size: 15 })}</span> Workout programmed — the monitor is showing it now. Just start rowing; the PM5 runs the countdowns, rest periods and totals itself.</div>`;
     } catch (e) {
       // The machine's own validation is authoritative (§1.3) — show its words.
       box.innerHTML = `<div class="notice warn mt"><strong>${e.machineRejection ? 'The monitor rejected this workout' : 'Couldn\'t program the monitor'}</strong><br>${esc(e.message)}</div>`;
@@ -184,7 +190,7 @@ export async function renderRow(el) {
         <div class="card-head"><span class="icon-chip sm">${icon('activity', { size: 18 })}</span><h3>Stroke force curve</h3>
           <button class="ghost sm card-head-action" id="hrBtn">${hrBtnLabel(hrManager.state === SensorState.CONNECTED)}</button></div>
         <canvas class="chart" id="forceCanvas" height="170"></canvas>
-        <p class="muted small">Live per-stroke force shape (current vs. previous stroke) — data the monitor never shows you.</p>
+        <p class="muted small" id="forceNote">${forceCurveNote()}</p>
       </div>
       <div class="row mt">
         <button id="finishBtn" style="flex:1">${icon('check', { size: 18 })} Finish & save workout</button>
@@ -197,6 +203,27 @@ export async function renderRow(el) {
     ? `${icon('pulse', { size: 16 })} HR monitor ${icon('check', { size: 15 })}`
     : `${icon('plus', { size: 16 })} HR monitor`;
 
+  function forceCurveNote() {
+    if (session.adapter?.kind === 'pm5' && session.adapter.forceCurveMode === 'unsupported') {
+      return 'This monitor provides no force-curve path over Bluetooth (no force-curve characteristic and no control service — very old PM5 firmware). Updating the firmware with the Concept2 Utility enables it; everything else keeps working.';
+    }
+    return 'Live per-stroke force shape (current vs. previous stroke) — data the monitor never shows you.';
+  }
+
+  // §1.6 path 1 — honest status for heart-rate-on-the-monitor. When the app
+  // has a strap connected but this PM5 can't accept forwarded readings, say
+  // exactly why and what to do, instead of silently showing HR only in-app.
+  function maybeExplainHrForward() {
+    const a = session.adapter;
+    if (!a || a.kind !== 'pm5' || a.hrForward?.supported || hrManager.state !== SensorState.CONNECTED) return;
+    const why = a.hrForward?.reason === 'permission'
+      ? 'This erg was paired before heart-rate forwarding existed in RowPoint — disconnect and reconnect it via “Connect erg” once to grant access.'
+      : a.hrForward?.reason === 'write_failed'
+        ? 'The monitor stopped accepting forwarded readings (Bluetooth write failures).'
+        : 'This PM5 firmware doesn’t accept forwarded heart rate. Update it with the Concept2 Utility, or pair the belt directly on the PM5 (Connect → Heart Rate) — RowPoint will then read HR back from the monitor.';
+    toast(`Heart rate will show in the app but not on the PM5: ${why}`, 'info', 9000);
+  }
+
   async function connectHr() {
     // §1.6: prefer the machine's HR relay when present; the HR-monitor
     // subsystem (sensors.js) is the concurrent-second-central path, shared
@@ -206,6 +233,7 @@ export async function renderRow(el) {
       const info = await hrManager.connect();
       toast(`Connected to ${info.name}.`, 'success');
       el.querySelector('#hrBtn').innerHTML = hrBtnLabel(true);
+      maybeExplainHrForward();
     } catch (e) {
       toast(e.message, 'error', 6000);
     }
@@ -433,8 +461,12 @@ export async function renderRow(el) {
   // The tile updates directly on every monitor sample (not only when erg
   // metrics tick), so live heart rate shows with minimal latency even before
   // the first stroke and between strokes.
-  session.unsubs.push(hrManager.on('bpm', ({ smoothed }) => {
+  session.unsubs.push(hrManager.on('bpm', ({ bpm, smoothed, rr }) => {
     session.hrValue = smoothed;
+    // §1.6 path 1: forward every raw reading to the machine so the PM5 shows
+    // and logs heart rate exactly like a directly-paired belt (best-effort,
+    // throttled inside the adapter; no-op on machines without the service).
+    session.adapter?.sendHeartRate?.(bpm, { rrMs: rr?.[0] });
     if (!Number.isFinite(session.last?.heartRate)) {
       setText('#mHr', smoothed ? String(smoothed) : '–');
     }

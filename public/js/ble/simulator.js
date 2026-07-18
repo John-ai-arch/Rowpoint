@@ -22,6 +22,11 @@ export class SimulatedErgAdapter {
     this.plan = null;
     this._timer = null;
     this._running = false;
+    // Mirror the PM5 adapter surface so the whole UI (HR-on-monitor state,
+    // force-curve mode notices, programming verification) works hardware-free.
+    this.forceCurveMode = 'notify';
+    this.hrForward = { supported: true, reason: null };
+    this.forwardedHr = null;
   }
 
   onMetrics(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
@@ -51,6 +56,15 @@ export class SimulatedErgAdapter {
       throw err;
     }
     this.plan = plan;
+    return { verified: true, workoutType: null };
+  }
+
+  // Same surface as Concept2PM5Adapter.sendHeartRate — the simulated monitor
+  // "displays" whatever the app forwards (visible as the HR relay value).
+  sendHeartRate(bpm) {
+    if (!Number.isFinite(bpm) || bpm <= 0) return false;
+    this.forwardedHr = Math.round(bpm);
+    return true;
   }
 
   /* ---- workout simulation ---- */

@@ -72,6 +72,7 @@ class ErgManager {
             'ce060010-43e5-11e4-916c-0800200c9a66',
             'ce060020-43e5-11e4-916c-0800200c9a66',
             'ce060030-43e5-11e4-916c-0800200c9a66',
+            'ce060040-43e5-11e4-916c-0800200c9a66', // C2 PM heart-rate receive (HR forwarding)
             FTMS_SERVICE,
           ],
         });
