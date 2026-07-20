@@ -466,7 +466,15 @@ export class Concept2PM5Adapter {
       for (let i = 0; i < frames.length; i++) {
         if (i > 0) await sleep(MIN_INTERFRAME_GAP_MS + 10); // spec: ≥50 ms between frames
         logBle('program:tx', { frame: `${i + 1}/${frames.length}`, bytes: frames[i].length, hex: hexStr(frames[i]) });
-        const parsed = await this._csafeRequest(frames[i], 'program', 3000);
+        let parsed = await this._csafeRequest(frames[i], 'program', 3000);
+        if (parsed === null) {
+          // One retry: configuration frames are idempotent and a single lost
+          // response is the most common transient failure near a busy 2.4 GHz
+          // band. A second silence is a real fault and fails loudly.
+          logBle('program:ack-timeout-retrying', { frame: `${i + 1}/${frames.length}` });
+          await sleep(150);
+          parsed = await this._csafeRequest(frames[i], 'program', 3000);
+        }
         if (parsed === null) {
           logBle('program:ack-timeout', { frame: `${i + 1}/${frames.length}` });
           throw new Error('Timed out waiting for the monitor to acknowledge the workout. Check the PM5 is awake and still connected, then try again.');

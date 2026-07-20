@@ -6,6 +6,7 @@ import { t } from '../i18n.js';
 import { icon } from '../icons.js';
 import { celebrate } from '../celebrate.js';
 import { ergManager, ConnState } from '../ble/ergSource.js';
+import { bleLog } from '../ble/pm5.js';
 import { hrManager, SensorState } from '../ble/sensors.js';
 import { bluetoothHelpHtml } from '../ble/support.js';
 import { drawForceCurve } from '../components/charts.js';
@@ -26,7 +27,10 @@ export async function renderRow(el) {
   const teamId = qs.get('team');
   const planId = qs.get('planId');
 
-  let plan = null, planName = 'Just row';
+  // A workout the user SELECTED must never silently degrade to Just Row: if
+  // the plan can't be resolved, say so loudly — otherwise the erg is left
+  // unprogrammed while the athlete believes a workout is active.
+  let plan = null, planName = 'Just row', planLoadError = null;
   const draft = sessionStorage.getItem('rp_draft_plan');
   if (draft) { const d = JSON.parse(draft); plan = d.plan; planName = d.name; }
   if (assignmentId && teamId) {
@@ -34,13 +38,19 @@ export async function renderRow(el) {
       const { assignments } = await api(`/teams/${teamId}/assignments`);
       const a = assignments.find(x => x.id === assignmentId);
       if (a) { plan = a.plan; planName = a.name; }
-    } catch (e) { toast(e.message, 'error'); }
+      else planLoadError = 'This coach assignment could not be found, so the monitor will NOT be programmed. Go back and open the workout again.';
+    } catch (e) {
+      planLoadError = `Couldn't load the assigned workout (${e.message}), so the monitor will NOT be programmed. Check your connection and reopen the workout.`;
+    }
   } else if (planId) {
     try {
       const { suggestions } = await api('/workouts/daily/suggestions');
       const p = suggestions.find(x => x.id === planId);
       if (p) { plan = p.plan; planName = p.name; }
-    } catch { /* fall back to just row */ }
+      else planLoadError = 'This suggested workout has expired (suggestions rotate daily), so the monitor will NOT be programmed. Pick a fresh one from Home.';
+    } catch (e) {
+      planLoadError = `Couldn't load the suggested workout (${e.message}), so the monitor will NOT be programmed. Check your connection and try again from Home.`;
+    }
   }
 
   const session = {
@@ -49,6 +59,7 @@ export async function renderRow(el) {
     lastSplitDistance: 0, lastSplitTime: 0, splitHr: [], splitRate: [], splitWatts: [],
     channel: assignmentId ? `team_workout:${assignmentId}` : null,
     liveEntries: new Map(), finishedSaved: false, lastPublish: 0, last: null,
+    programmedOk: false,
     // One stable id per session: a pagehide safety copy and the final save
     // share it, so if the safety copy syncs first the server treats the final
     // save as already-synced (idempotent) rather than a duplicate workout.
@@ -76,6 +87,7 @@ export async function renderRow(el) {
           ${plan ? `<button class="sm secondary" id="pushBtn" title="Send to the monitor">Send to erg</button>` : ''}
         </div>
       </div>
+      ${planLoadError ? `<div class="notice warn mt"><strong>Workout not loaded</strong><br>${esc(planLoadError)}</div>` : ''}
       <div id="pushResult"></div>
     </div>
     <div id="liveArea"></div>
@@ -156,6 +168,30 @@ export async function renderRow(el) {
     updateConnState();
   }
 
+  // Copy a complete byte-level reconstruction of the last programming session
+  // (plan, every frame as hex, write results, the PM5's responses) so a
+  // failure on real hardware can be reported with exact evidence.
+  function wireDiagButton() {
+    el.querySelector('#copyDiagBtn')?.addEventListener('click', async () => {
+      const report = {
+        at: new Date().toISOString(),
+        plan, planName,
+        adapter: session.adapter?.kind, machineId: session.adapter?.machineId,
+        forceCurveMode: session.adapter?.forceCurveMode, hrForward: session.adapter?.hrForward,
+        monitor: { workoutType: session.last?.workoutType, workoutState: session.last?.workoutState },
+        log: bleLog,
+      };
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
+        toast('Diagnostic log copied — paste it into a message or bug report.', 'success');
+      } catch {
+        console.info('RowPoint BLE diagnostics', report);
+        toast('Clipboard unavailable — the log was printed to the browser console instead.', 'info', 6000);
+      }
+    });
+  }
+  const diagButtonHtml = `<div class="mt"><button class="ghost sm" id="copyDiagBtn">Copy diagnostic log</button></div>`;
+
   async function pushPlan(manual = true) {
     const box = el.querySelector('#pushResult');
     const v = validatePlanClient(plan);
@@ -165,12 +201,19 @@ export async function renderRow(el) {
       const res = await session.adapter.sendWorkout(plan);
       // The adapter verifies against the monitor's own reported workout type —
       // phrase the confirmation honestly instead of assuming success.
-      box.innerHTML = res?.verified === false
-        ? `<div class="notice warn mt">The monitor acknowledged the workout but hasn't switched to it yet — check the PM5 screen. If it still shows a menu, press Menu on the monitor and send again.</div>`
-        : `<div class="notice mt"><span style="color:var(--good)">${icon('check', { size: 15 })}</span> Workout programmed — the monitor is showing it now. Just start rowing; the PM5 runs the countdowns, rest periods and totals itself.</div>`;
+      if (res?.verified === false) {
+        session.programmedOk = false;
+        box.innerHTML = `<div class="notice warn mt">The monitor acknowledged the workout but hasn't switched to it yet — check the PM5 screen. If it still shows a menu, press Menu on the monitor and send again.${diagButtonHtml}</div>`;
+        wireDiagButton();
+      } else {
+        session.programmedOk = true;
+        box.innerHTML = `<div class="notice mt"><span style="color:var(--good)">${icon('check', { size: 15 })}</span> Workout programmed — the monitor is showing it now. Just start rowing; the PM5 runs the countdowns, rest periods and totals itself.</div>`;
+      }
     } catch (e) {
       // The machine's own validation is authoritative (§1.3) — show its words.
-      box.innerHTML = `<div class="notice warn mt"><strong>${e.machineRejection ? 'The monitor rejected this workout' : 'Couldn\'t program the monitor'}</strong><br>${esc(e.message)}</div>`;
+      session.programmedOk = false;
+      box.innerHTML = `<div class="notice warn mt"><strong>${e.machineRejection ? 'The monitor rejected this workout' : 'Couldn\'t program the monitor'}</strong><br>${esc(e.message)}${diagButtonHtml}</div>`;
+      wireDiagButton();
     }
   }
 
@@ -255,6 +298,18 @@ export async function renderRow(el) {
     if (m.disconnected) {
       updateConnState(ConnState.ERROR, { message: 'The machine disconnected. Your workout so far is safe — reconnect or save it.' });
       return;
+    }
+    // Ground truth from the machine itself: general status reports which
+    // workout the PM5 is actually running. If we programmed one but the
+    // monitor has dropped back to Just Row before rowing started (Menu press,
+    // power cycle), never pretend — warn and offer to send it again.
+    if (session.programmedOk && plan && plan.type !== 'justrow' && !session.started
+        && session.adapter?.kind === 'pm5' && Number.isFinite(m.workoutType) && m.workoutType <= 1) {
+      session.programmedOk = false;
+      const box = el.querySelector('#pushResult');
+      if (box) {
+        box.innerHTML = `<div class="notice warn mt"><strong>The PM5 is no longer showing this workout</strong><br>The monitor reports it is back in Just Row (its menu was used or it restarted). Press “Send to erg” to program it again.</div>`;
+      }
     }
     if (!session.started && (m.distanceM > 1 || m.elapsedS > 1)) {
       session.started = true;
@@ -454,6 +509,10 @@ export async function renderRow(el) {
   const avg = (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
 
   el.innerHTML = header();
+  // "Send to erg" is the manual (re)program control — the recovery path when
+  // an auto-push failed or the monitor dropped the workout. It was previously
+  // rendered without any handler, so clicking it silently did nothing.
+  el.querySelector('#pushBtn')?.addEventListener('click', () => pushPlan(true));
   connButtons();
   const unSt = ergManager.onState(() => updateConnState());
   // Live HR from the shared monitor subsystem: feeds the HR tile when the

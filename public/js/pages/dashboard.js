@@ -132,6 +132,10 @@ export async function renderDashboard(el) {
       const rec = suggestion.recommendation;
       if (rec?.workout?.plan) {
         sessionStorage.setItem('rp_draft_plan', JSON.stringify({ plan: rec.workout.plan, name: rec.title }));
+      } else {
+        // Never silently degrade a "start this session" into an unprogrammed
+        // free row — say what's happening before navigating.
+        toast('This recommendation has no machine-programmable plan, so the monitor won\'t be programmed — opening free row.', 'info', 6000);
       }
       location.hash = '#/row';
     };
