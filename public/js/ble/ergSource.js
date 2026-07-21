@@ -6,6 +6,7 @@
 import { Concept2PM5Adapter, C2_SERVICE_DISCOVERY } from './pm5.js';
 import { FTMSAdapter, FTMS_SERVICE } from './ftms.js';
 import { SimulatedErgAdapter } from './simulator.js';
+import { BluetoothManager } from './transport.js';
 
 export const ConnState = {
   IDLE: 'idle', SCANNING: 'scanning', CANDIDATE_FOUND: 'candidate_found',
@@ -30,7 +31,11 @@ class ErgManager {
     for (const fn of this.listeners) fn(state, error);
   }
 
-  bluetoothAvailable() { return !!navigator.bluetooth; }
+  bluetoothAvailable() { return BluetoothManager.isAvailable(); }
+
+  /** Silent reconnect needs persistent device permissions (getDevices) —
+      present on native Web Bluetooth, absent on the iOS bridges. */
+  silentReconnectSupported() { return BluetoothManager.canGetDevices(); }
 
   rememberedMachine() {
     try { return JSON.parse(localStorage.getItem('rp_last_machine') || 'null'); } catch { return null; }
@@ -59,14 +64,14 @@ class ErgManager {
         this._set(ConnState.DISCOVERING);
         await adapter.connect();
       } else {
-        if (!navigator.bluetooth) {
+        if (!BluetoothManager.isAvailable()) {
           throw Object.assign(new Error(
-            'Web Bluetooth is not available in this browser. Use Chrome/Edge over HTTPS (or localhost), or start the built-in simulator.'),
+            'Bluetooth is not available in this browser. Use Chrome/Edge over HTTPS (or localhost), a Web-Bluetooth browser like WebBLE on iPhone/iPad, or start the built-in simulator.'),
           { code: 'no_bluetooth' });
         }
         // Scan for both the Concept2 discovery UUID and FTMS 0x1826 at once;
         // the chooser lists only machines advertising one of the two (§1.5).
-        const device = await navigator.bluetooth.requestDevice({
+        const device = await BluetoothManager.requestDevice({
           filters: [{ services: [C2_SERVICE_DISCOVERY] }, { services: [FTMS_SERVICE] }],
           optionalServices: [
             'ce060010-43e5-11e4-916c-0800200c9a66',
@@ -113,15 +118,16 @@ class ErgManager {
 
   /**
    * Best-effort reconnect to the remembered physical machine WITHOUT the
-   * chooser, using navigator.bluetooth.getDevices() (previously-granted
-   * devices). Returns the adapter, or null when unsupported/not found —
-   * callers fall back to the normal chooser flow.
+   * chooser, using the transport's previously-granted devices. Returns the
+   * adapter, or null when unsupported/not found — callers fall back to the
+   * normal chooser flow. (On the iOS bridges getDevices() is unavailable, so
+   * this resolves null and the user simply gets the chooser.)
    */
   async reconnectRemembered() {
     const remembered = this.rememberedMachine();
-    if (!remembered?.deviceId || !navigator.bluetooth?.getDevices) return null;
+    if (!remembered?.deviceId || !BluetoothManager.canGetDevices()) return null;
     try {
-      const devices = await navigator.bluetooth.getDevices();
+      const devices = await BluetoothManager.getDevices();
       const device = devices.find(d => d.id === remembered.deviceId);
       if (!device) return null;
       this._set(ConnState.SCANNING);

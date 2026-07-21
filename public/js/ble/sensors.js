@@ -17,6 +17,8 @@
 // reconnection. The native iOS/Android ports implement scan lists on this
 // same interface with CoreBluetooth/BluetoothLeScanner.
 
+import { BluetoothManager } from './transport.js';
+
 export const HR_SERVICE = 0x180d;
 const HR_MEASUREMENT = 0x2a37;
 const BATTERY_SERVICE = 0x180f;
@@ -40,10 +42,10 @@ export const SensorState = {
  * composes translated messages from these codes). Never assumes Bluetooth
  * exists; identifies WHY it's unavailable so we can give an honest, specific
  * explanation per browser instead of a generic error.
- * @returns {{ supported:boolean, browser:'ios'|'apple'|'firefox'|'chromium'|'other', secure:boolean }}
+ * @returns {{ supported:boolean, browser:'ios'|'apple'|'firefox'|'chromium'|'other', secure:boolean, transport:string }}
  */
 export function bluetoothSupportInfo() {
-  const supported = typeof navigator !== 'undefined' && !!navigator.bluetooth;
+  const supported = BluetoothManager.isAvailable();
   const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
   const isIOS = /iPad|iPhone|iPod/.test(ua)
     || (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -56,7 +58,7 @@ export function bluetoothSupportInfo() {
   else if (isFirefox) browser = 'firefox';
   else if (isChromium) browser = 'chromium';
   const secure = typeof window === 'undefined' ? true : window.isSecureContext !== false;
-  return { supported, browser, secure };
+  return { supported, browser, secure, transport: BluetoothManager.transportKind };
 }
 
 /**
@@ -65,9 +67,7 @@ export function bluetoothSupportInfo() {
  * Bluetooth" from "adapter off". Returns true/false, or null when unknown.
  */
 export async function bluetoothAvailability() {
-  if (typeof navigator === 'undefined' || !navigator.bluetooth) return false;
-  if (typeof navigator.bluetooth.getAvailability !== 'function') return null;
-  try { return await navigator.bluetooth.getAvailability(); } catch { return null; }
+  return BluetoothManager.getAvailability();
 }
 
 /**
@@ -164,7 +164,7 @@ export function effectiveMaxHr(user) {
 
 class HeartRateManagerImpl {
   constructor() {
-    this.state = navigator.bluetooth ? SensorState.DISCONNECTED : SensorState.UNAVAILABLE;
+    this.state = BluetoothManager.isAvailable() ? SensorState.DISCONNECTED : SensorState.UNAVAILABLE;
     this.monitor = null;            // active BleHeartRateMonitor | SimulatedHeartRateMonitor
     this.bpm = null;
     this.rr = [];
@@ -209,18 +209,18 @@ class HeartRateManagerImpl {
     this._emit('state', { state, detail });
   }
 
-  available() { return !!navigator.bluetooth || this.monitor?.kind === 'simulated'; }
+  available() { return BluetoothManager.isAvailable() || this.monitor?.kind === 'simulated'; }
 
   /* ---- connect via chooser (filtered to HR service ONLY) ---- */
   async connect() {
-    if (!navigator.bluetooth) {
+    if (!BluetoothManager.isAvailable()) {
       this._setState(SensorState.UNAVAILABLE);
-      throw new Error('Bluetooth is not available in this browser. Heart rate monitors need Chrome or Edge over HTTPS — or use the simulated monitor to explore the feature.');
+      throw new Error('Bluetooth is not available in this browser. Heart rate monitors need Chrome or Edge over HTTPS (or a Web-Bluetooth browser like WebBLE on iPhone/iPad) — or use the simulated monitor to explore the feature.');
     }
     this._setState(SensorState.SCANNING);
     let device;
     try {
-      device = await navigator.bluetooth.requestDevice({
+      device = await BluetoothManager.requestDevice({
         filters: [{ services: [HR_SERVICE] }],   // only true HR monitors appear
         optionalServices: [BATTERY_SERVICE, DEVICE_INFO_SERVICE],
       });
@@ -362,12 +362,12 @@ class HeartRateManagerImpl {
   async tryAutoReconnect() {
     if (this.state === SensorState.CONNECTED || this.state === SensorState.CONNECTING) return this.deviceInfo;
     const s = hrSettings();
-    if (!s.autoReconnect || !navigator.bluetooth?.getDevices) return null;
+    if (!s.autoReconnect || !BluetoothManager.canGetDevices()) return null;
     const known = knownDevices().filter(d => !d.simulated);
     if (!known.length) return null;
     const target = known.find(d => d.preferred) || known[0];
     try {
-      const devices = await navigator.bluetooth.getDevices();
+      const devices = await BluetoothManager.getDevices();
       const device = devices.find(d => d.id === target.id);
       if (!device) return null;
       this._setState(SensorState.RECONNECTING);

@@ -14,7 +14,11 @@ const {
   buildFrame, parseFrame, encodeWorkout, encodeTerminateWorkout,
   encodeForcePlotRequest, parseForcePlotResponse, describeMachineStatus, CSAFE,
 } = await import('../public/js/ble/csafe.js');
-const { buildHrPacket, parseForceCurveNotification } = await import('../public/js/ble/pm5.js');
+const { buildHrPacket, parseForceCurveNotification, Concept2PM5Adapter } = await import('../public/js/ble/pm5.js');
+const {
+  Transport, detectTransport, canonicalUuid, normalizeRequestOptions,
+  normalizeWebBleDevice, WebBLETransport, BluetoothManagerImpl,
+} = await import('../public/js/ble/transport.js');
 const { parseHrMeasurement, BleHeartRateMonitor } = await import('../public/js/ble/sensors.js');
 const { FTMSAdapter } = await import('../public/js/ble/ftms.js');
 const { sanitizeHrSeries, hrSummary, zoneIndex, effectiveMaxHr } = await import('../server/hr.js');
@@ -569,6 +573,232 @@ test('zone boundaries and effective max HR defaults', () => {
   const age30 = new Date().getFullYear() - 30;
   assert.equal(effectiveMaxHr({ birth_year: age30 }), 190);
   assert.equal(effectiveMaxHr({}), 190);
+});
+
+/* ---------------- Bluetooth transport layer (Web Bluetooth / WebBLE) ---------------- */
+
+test('detectTransport: native → webbluetooth, injected polyfill → webble, absent → none', () => {
+  assert.equal(detectTransport({}), Transport.NONE, 'no navigator');
+  assert.equal(detectTransport({ navigator: {} }), Transport.NONE, 'no bluetooth object');
+  // Math.max stands in for an engine-implemented function: its source
+  // stringifies to "[native code]" exactly like the real requestDevice.
+  assert.equal(detectTransport({ navigator: { bluetooth: { requestDevice: Math.max } } }),
+    Transport.WEB_BLUETOOTH, 'engine-implemented requestDevice');
+  assert.equal(detectTransport({ navigator: { bluetooth: { requestDevice: async () => {} } } }),
+    Transport.WEBBLE, 'plain-JS requestDevice = injected iOS bridge polyfill');
+});
+
+test('canonicalUuid: SIG aliases expand, strings lowercase, full UUIDs pass through', () => {
+  assert.equal(canonicalUuid(0x180d), '0000180d-0000-1000-8000-00805f9b34fb');
+  assert.equal(canonicalUuid(0x1826), '00001826-0000-1000-8000-00805f9b34fb');
+  assert.equal(canonicalUuid('CE060030-43E5-11E4-916C-0800200C9A66'), 'ce060030-43e5-11e4-916c-0800200c9a66');
+  assert.equal(canonicalUuid('ce060021-43e5-11e4-916c-0800200c9a66'), 'ce060021-43e5-11e4-916c-0800200c9a66');
+});
+
+test('normalizeRequestOptions maps numeric service UUIDs, preserves everything else', () => {
+  const out = normalizeRequestOptions({
+    filters: [{ services: [0x180d] }, { namePrefix: 'PM5' }],
+    optionalServices: [0x180f, 'CE060040-43E5-11E4-916C-0800200C9A66'],
+  });
+  assert.deepEqual(out.filters[0].services, ['0000180d-0000-1000-8000-00805f9b34fb']);
+  assert.deepEqual(out.filters[1], { namePrefix: 'PM5' });
+  assert.deepEqual(out.optionalServices,
+    ['0000180f-0000-1000-8000-00805f9b34fb', 'ce060040-43e5-11e4-916c-0800200c9a66']);
+});
+
+test('BluetoothManager without any transport: honest unavailability, no throws', async () => {
+  const m = new BluetoothManagerImpl({ navigator: {} });
+  assert.equal(m.isAvailable(), false);
+  assert.equal(m.transportKind, Transport.NONE);
+  assert.deepEqual(await m.getDevices(), []);
+  assert.equal(await m.getAvailability(), false);
+  assert.equal(m.capabilities().writeWithResponse, false);
+  await assert.rejects(m.requestDevice({}), (e) => e.code === 'no_bluetooth');
+});
+
+test('WebBLE transport: canonicalized chooser options, no fake getDevices, capability map', async () => {
+  let seenOptions = null;
+  const env = {
+    navigator: {
+      bluetooth: { requestDevice: async (o) => { seenOptions = o; return { id: 'd1', gatt: {} }; } },
+    },
+  };
+  const tr = new WebBLETransport(env);
+  await tr.requestDevice({ filters: [{ services: [0x1826] }], optionalServices: [0x2acc] });
+  assert.deepEqual(seenOptions.filters[0].services, ['00001826-0000-1000-8000-00805f9b34fb']);
+  assert.deepEqual(await tr.getDevices(), [], 'no persistent permissions on the bridge → empty, never invented');
+  const caps = tr.capabilities();
+  assert.equal(caps.getDevices, false);
+  assert.equal(caps.watchAdvertisements, false);
+  assert.equal(caps.writeWithResponse, true);
+  assert.equal(await tr.getAvailability(), true, 'bridge present implies a radio');
+
+  const m = new BluetoothManagerImpl(env);
+  assert.equal(m.transportKind, Transport.WEBBLE);
+  assert.equal(m.diagnostics().transport, Transport.WEBBLE);
+});
+
+/* ---- fake WebBLE object graph: plain JS objects with ONLY the pre-1.7
+   surface (writeValue, no writeValueWithResponse) — the worst real bridge. */
+
+function fakeWebBleChar(uuid, { readValue, onWrite } = {}) {
+  const ch = {
+    uuid,
+    _listeners: [],
+    startNotifications: async () => ch,
+    stopNotifications: async () => ch,
+    addEventListener(type, fn) { if (type === 'characteristicvaluechanged') ch._listeners.push(fn); },
+    removeEventListener(type, fn) { const i = ch._listeners.indexOf(fn); if (i >= 0) ch._listeners.splice(i, 1); },
+    notify(bytes) {
+      const value = new DataView(Uint8Array.from(bytes).buffer);
+      for (const fn of [...ch._listeners]) fn({ target: { value, uuid } });
+    },
+  };
+  if (readValue) ch.readValue = readValue;
+  if (onWrite) ch.writeValue = async (data) => onWrite(ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : new Uint8Array(data));
+  return ch;
+}
+
+test('WebBLE normalization: write methods patched in place, identity preserved', async () => {
+  const writes = [];
+  const ch = fakeWebBleChar('ce060021-43e5-11e4-916c-0800200c9a66', { onWrite: (b) => writes.push([...b]) });
+  const svc = { getCharacteristic: async () => ch };
+  const server = { connect: async () => server, getPrimaryService: async () => svc };
+  const device = { id: 'd1', gatt: server, addEventListener() {}, removeEventListener() {} };
+
+  normalizeWebBleDevice(device);
+  const s = await device.gatt.connect();
+  const got1 = await (await s.getPrimaryService(0xce06)).getCharacteristic(0x2a37);
+  const got2 = await (await s.getPrimaryService(0xce06)).getCharacteristic(0x2a37);
+  assert.equal(got1, ch, 'patched IN PLACE — same object the bridge returned');
+  assert.equal(got1, got2, 'identity stable across repeat lookups (listener hygiene depends on it)');
+
+  await got1.writeValueWithResponse(Uint8Array.from([1, 2, 3]));
+  await got1.writeValueWithoutResponse(Uint8Array.from([4]));
+  assert.deepEqual(writes, [[1, 2, 3], [4]], 'both spec methods delegate to the bridge writeValue');
+
+  // An implementation that already has the split API is left untouched.
+  const modern = { writeValue: async () => 'plain', writeValueWithResponse: async () => 'withResp' };
+  const svc2 = { getCharacteristic: async () => modern };
+  const server2 = { getPrimaryService: async () => svc2 };
+  normalizeWebBleDevice({ id: 'd2', gatt: server2 });
+  const gotModern = await (await server2.getPrimaryService(1)).getCharacteristic(2);
+  assert.equal(await gotModern.writeValueWithResponse(), 'withResp', 'existing method not overwritten');
+});
+
+test('FTMS connect probes characteristics directly (no getCharacteristics/BluetoothUUID)', async () => {
+  const bike = fakeWebBleChar('00002ad2-0000-1000-8000-00805f9b34fb');
+  const svc = {
+    // Only the bike characteristic exists; the rower lookup rejects like a
+    // real GATT miss. No getCharacteristics(), no BluetoothUUID global.
+    getCharacteristic: async (uuid) => {
+      if (canonicalUuid(uuid) === '00002ad2-0000-1000-8000-00805f9b34fb') return bike;
+      throw new Error('characteristic not found');
+    },
+  };
+  const server = { connected: true, getPrimaryService: async () => svc };
+  const device = { id: 'ftms-ios', name: 'Bike', gatt: server, addEventListener() {}, removeEventListener() {} };
+  const a = new FTMSAdapter(device, server);
+  await a.connect();
+  assert.equal(a.machineType, 'bike');
+  bike.notify([0x01, 0x08, 0x2C, 0x01]); // elapsed 300 s
+  assert.equal(a.live.elapsedS, 300, 'notifications flow through the probed characteristic');
+});
+
+test('PM5 workout programming over the WebBLE surface: 4×1000m/2:00 rest, byte-identical CSAFE', async () => {
+  const U = (tail) => `ce0600${tail}-43e5-11e4-916c-0800200c9a66`;
+  const txChunks = [];      // every raw GATT write (must each be ≤20 bytes)
+  const txFrames = [];      // reassembled CSAFE frames as the PM5 would see them
+  let txBuf = [];
+  const hrWrites = [];
+
+  const ctrlRx = fakeWebBleChar(U('22'));
+  const generalStatus = fakeWebBleChar(U('31'));
+  const ctrlTx = fakeWebBleChar(U('21'), {
+    onWrite: (bytes) => {
+      assert.ok(bytes.length <= 20, `GATT write chunked to ≤20 bytes (got ${bytes.length})`);
+      txChunks.push([...bytes]);
+      txBuf.push(...bytes);
+      if (txBuf[txBuf.length - 1] === 0xF2) {
+        txFrames.push([...txBuf]);
+        txBuf = [];
+        // The "PM5" acknowledges each frame (status 0x81 = accepted, state 1)
+        // and reports the programmed workout type on general status.
+        setTimeout(() => {
+          ctrlRx.notify([...buildFrame([0x81])]);
+          generalStatus.notify([0, 0, 0, 0, 0, 0, CSAFE.WT_VARIABLE_INTERVAL, 0, 0, 0, 0]);
+        }, 0);
+      }
+    },
+  });
+  const serial = fakeWebBleChar(U('12'), {
+    readValue: async () => new DataView(new TextEncoder().encode('PM5-431234567\0').buffer),
+  });
+  const hrWrite = fakeWebBleChar(U('41'), { onWrite: (b) => hrWrites.push([...b]) });
+  const forceCurve = fakeWebBleChar(U('3d'));
+  const add1 = fakeWebBleChar(U('32'));
+  const add2 = fakeWebBleChar(U('33'));
+  const stroke = fakeWebBleChar(U('35'));
+
+  const byUuid = Object.fromEntries(
+    [serial, ctrlTx, ctrlRx, generalStatus, add1, add2, stroke, forceCurve, hrWrite].map(c => [c.uuid, c]));
+  const services = {
+    [U('10')]: true, [U('20')]: true, [U('30')]: true, [U('40')]: true,
+  };
+  const mkSvc = () => ({
+    getCharacteristic: async (uuid) => {
+      const ch = byUuid[canonicalUuid(uuid)];
+      if (!ch) throw new Error('characteristic not found');
+      return ch;
+    },
+  });
+  const server = {
+    connect: async () => server,
+    getPrimaryService: async (uuid) => {
+      if (!services[canonicalUuid(uuid)]) throw new Error('service not found');
+      return mkSvc();
+    },
+  };
+  const device = { id: 'ios-pm5', name: 'PM5 431234567', gatt: server, addEventListener() {}, removeEventListener() {} };
+
+  normalizeWebBleDevice(device);                       // ← the WebBLE transport's only intervention
+  const adapter = new Concept2PM5Adapter(device);
+  await adapter.connect();
+
+  assert.equal(adapter.machineId, 'PM5-431234567', 'serial read through the bridge readValue');
+  assert.equal(adapter.forceCurveMode, 'notify');
+  assert.equal(adapter.hrForward.supported, true);
+  assert.equal(typeof ctrlTx.writeValueWithResponse, 'function', 'pre-1.7 bridge gained the spec write method');
+
+  // Seed the monitor state the adapter waits for (idle → no terminate needed).
+  generalStatus.notify([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+  const plan = {
+    type: 'intervals',
+    intervals: Array.from({ length: 4 }, () => ({ workType: 'distance', workDistanceM: 1000, restTimeS: 120 })),
+  };
+  const result = await adapter.sendWorkout(plan);
+  assert.equal(result.verified, true, 'monitor reported the variable-interval workout type');
+
+  // The exact bytes the PM5 receives are IDENTICAL to the desktop encoding —
+  // the transport layer never touches CSAFE content.
+  const expected = encodeWorkout(plan).map(f => [...f]);
+  assert.deepEqual(txFrames, expected, 'CSAFE frames byte-identical over the WebBLE surface');
+
+  // Heart-rate forwarding writes the 20-byte packet through the same bridge.
+  assert.equal(adapter.sendHeartRate(142), true);
+  await new Promise(r => setTimeout(r, 20));
+  assert.equal(hrWrites.length, 1);
+  assert.equal(hrWrites[0].length, 20);
+  assert.equal(hrWrites[0][5], 142);
+
+  // Force-curve notifications stream through the patched characteristic.
+  const curves = [];
+  adapter.onForceCurve(c => curves.push(c));
+  forceCurve.notify([0x12, 0x00, 0x34, 0x00, 0x68, 0x00]); // 1 chunk, 2 LE words
+  assert.deepEqual(curves, [[0x34, 0x68]]);
+
+  await adapter.disconnect();
 });
 
 /* ---------------- feedback phrasing fallback ---------------- */

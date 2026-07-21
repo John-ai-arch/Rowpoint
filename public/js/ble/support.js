@@ -17,7 +17,7 @@ export { bluetoothSupportInfo, bluetoothAvailability };
 export function bluetoothHelpHtml({ showSimulator = true } = {}) {
   const info = bluetoothSupportInfo();
   const lines = [t('ble.unsupportedBody')];
-  if (info.browser === 'ios') lines.push(t('ble.unsupportedApple'));
+  if (info.browser === 'ios') lines.push(t('ble.unsupportedApple'), t('ble.iosBridgeHint'));
   else if (info.browser === 'apple') lines.push(t('ble.unsupportedApple'), t('ble.unsupportedChrome'));
   else if (info.browser === 'firefox') lines.push(t('ble.unsupportedFirefox'));
   else lines.push(t('ble.unsupportedChrome'));

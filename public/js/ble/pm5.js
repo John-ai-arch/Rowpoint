@@ -7,6 +7,7 @@ import {
   CSAFE, MIN_INTERFRAME_GAP_MS, encodeWorkout, encodeTerminateWorkout,
   encodeForcePlotRequest, parseForcePlotResponse, parseFrame, describeMachineStatus,
 } from './csafe.js';
+import { BluetoothManager } from './transport.js';
 
 export const C2_SERVICE_DISCOVERY = 'ce060000-43e5-11e4-916c-0800200c9a66';
 export const C2_SERVICE_INFO      = 'ce060010-43e5-11e4-916c-0800200c9a66';
@@ -67,7 +68,9 @@ function logBle(event, detail = {}, quiet = false) {
   const verbose = typeof localStorage !== 'undefined' && localStorage.getItem('rp_ble_debug') === '1';
   if (!quiet || verbose) console.info(`[pm5] ${event}`, detail);
 }
-if (typeof window !== 'undefined') window.RowPointBLE = { log: bleLog };
+if (typeof window !== 'undefined') {
+  window.RowPointBLE = { log: bleLog, diagnostics: () => BluetoothManager.diagnostics() };
+}
 
 /**
  * Build the 20-byte packet for the PM heart-rate receive characteristic
@@ -153,9 +156,10 @@ export class Concept2PM5Adapter {
 
   static async requestDevice() {
     // Scan for the Concept2 discovery UUID (§1.2 connection flow step 1).
-    // Web Bluetooth shows the OS chooser (sorted by RSSI by the browser),
-    // standing in for the app-side RSSI sort of the native implementation.
-    return navigator.bluetooth.requestDevice({
+    // The chooser (sorted by RSSI by the browser) stands in for the app-side
+    // RSSI sort of the native implementation. Routed through the transport
+    // layer so the same call works on native Web Bluetooth and iOS bridges.
+    return BluetoothManager.requestDevice({
       filters: [{ services: [C2_SERVICE_DISCOVERY] }],
       optionalServices: [C2_SERVICE_INFO, C2_SERVICE_CONTROL, C2_SERVICE_ROWING, C2_SERVICE_HR],
     });
@@ -218,6 +222,7 @@ export class Concept2PM5Adapter {
     }
     logBle('connect:capabilities', {
       machineId: this.machineId,
+      transport: BluetoothManager.transportKind,
       controlService: !!this._ctrlTx,
       forceCurveMode: this.forceCurveMode,
       hrForward: { ...this.hrForward },
@@ -443,6 +448,7 @@ export class Concept2PM5Adapter {
     logBle('program:start', {
       plan: JSON.parse(JSON.stringify(plan ?? { type: 'justrow' })),
       characteristic: CH.CTRL_TX,
+      transport: BluetoothManager.transportKind,
     });
     try {
       // The workout state decides whether we must terminate first, and right

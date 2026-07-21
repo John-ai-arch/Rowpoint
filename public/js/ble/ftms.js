@@ -2,6 +2,8 @@
 // non-Concept2 machines: standardized Rower Data (0x2AD1) and Indoor Bike
 // Data (0x2AD2). Same ErgDataSource shape as the PM5 adapter, so nothing
 // above this layer knows which machine it's talking to.
+import { BluetoothManager } from './transport.js';
+
 export const FTMS_SERVICE = 0x1826;
 const ROWER_DATA = 0x2ad1;
 const BIKE_DATA = 0x2ad2;
@@ -25,7 +27,7 @@ export class FTMSAdapter {
   _emit() { const snap = { ...this.live, ts: Date.now() }; for (const fn of this.listeners) fn(snap); }
 
   static async requestDevice() {
-    return navigator.bluetooth.requestDevice({
+    return BluetoothManager.requestDevice({
       filters: [{ services: [FTMS_SERVICE] }],
       optionalServices: [FEATURE],
     });
@@ -35,14 +37,13 @@ export class FTMSAdapter {
     const server = (this.server && this.server.connected) ? this.server : await this.device.gatt.connect();
     this.server = server;
     const svc = await server.getPrimaryService(FTMS_SERVICE);
-    const chars = await svc.getCharacteristics();
-    const has = (uuid) => chars.some(c => c.uuid === BluetoothUUID.getCharacteristic(uuid));
-    if (has(ROWER_DATA)) {
+    // Probe for the data characteristic directly instead of enumerating with
+    // getCharacteristics() + the BluetoothUUID global: neither is implemented
+    // by the iOS Web-Bluetooth bridges, and direct lookups work everywhere.
+    if (await this._subscribe(svc, ROWER_DATA, (dv) => this._parseRowerData(dv))) {
       this.machineType = 'rower';
-      await this._subscribe(svc, ROWER_DATA, (dv) => this._parseRowerData(dv));
-    } else if (has(BIKE_DATA)) {
+    } else if (await this._subscribe(svc, BIKE_DATA, (dv) => this._parseBikeData(dv))) {
       this.machineType = 'bike';
-      await this._subscribe(svc, BIKE_DATA, (dv) => this._parseBikeData(dv));
     } else {
       throw new Error('This fitness machine exposes no rower or bike data characteristic.');
     }
@@ -55,10 +56,14 @@ export class FTMSAdapter {
     this.device.addEventListener('gattserverdisconnected', this._onGattDisconnected);
   }
 
+  // Returns false when the characteristic is absent (used as a probe), throws
+  // only on unexpected failures after the characteristic was found.
   async _subscribe(svc, uuid, handler) {
-    const ch = await svc.getCharacteristic(uuid);
+    let ch;
+    try { ch = await svc.getCharacteristic(uuid); } catch { return false; }
     await ch.startNotifications();
     ch.addEventListener('characteristicvaluechanged', (e) => handler(e.target.value));
+    return true;
   }
 
   async disconnect() {
