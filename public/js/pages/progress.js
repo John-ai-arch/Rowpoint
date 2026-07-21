@@ -36,22 +36,14 @@ export async function renderProgress(el) {
   const remaining = Math.max(0, goalMeters - weekMeters);
 
   el.innerHTML = `
-    <header class="mb">
-      <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
-        <div><h1>${esc(t('progress.title'))}</h1>
-          <p class="muted">${esc(t('progress.subtitle'))}</p></div>
-        <span class="row" style="gap:6px;flex-wrap:wrap"><a class="btn secondary sm" href="#/observatory">${icon('globe', { size: 16 })} ${esc(t('obs.open'))}</a>
-        <a class="btn secondary sm" href="#/timeline">${icon('progress', { size: 16 })} ${esc(t('timeline.open'))}</a>
-        <a class="btn secondary sm" href="#/lab">${icon('lightbulb', { size: 16 })} ${esc(t('lab.open'))}</a>
-        <a class="btn secondary sm" href="#/athlete">${icon('user', { size: 16 })} ${esc(t('twin.open'))}</a>
-        <a class="btn secondary sm" href="#/optimizer">${icon('target', { size: 16 })} ${esc(t('opt.open'))}</a>
-        <a class="btn secondary sm" href="#/racelab">${icon('flag', { size: 16 })} ${esc(t('race.open'))}</a>
-        <a class="btn secondary sm" href="#/stroke">${icon('eye', { size: 16 })} ${esc(t('stroke.open'))}</a>
-        <a class="btn secondary sm" href="#/plan">${icon('calendar', { size: 16 })} ${esc(t('plan.open'))}</a></span>
-      </div>
-    </header>
+    <div class="page-head">
+      <h1>${esc(t('progress.title'))}</h1>
+      <p class="muted">${esc(t('progress.subtitle'))}</p>
+    </div>
 
     ${insightHtml(data, remaining, goalPct)}
+
+    ${analyticsHub()}
 
     ${communityChip(data.population)}
 
@@ -105,26 +97,20 @@ export async function renderProgress(el) {
         ${prCard(t('progress.fastestSplit'), data.records.fastestSplit && fmtSplit(data.records.fastestSplit.split) + '/500m', data.records.fastestSplit && fmtDate(data.records.fastestSplit.at))}
         ${prCard(t('progress.longestPiece'), data.records.longestPiece && fmtDistance(data.records.longestPiece.meters), data.records.longestPiece && fmtDate(data.records.longestPiece.at))}
         ${prCard(t('progress.best500'), data.records.best500 && fmtDuration(data.records.best500.timeS), data.records.best500 && fmtDate(data.records.best500.at))}
-        ${prCard(t('progress.highestWatts'), data.records.highestWatts && `${data.records.highestWatts.watts} W`, data.records.highestWatts && fmtDate(data.records.highestWatts.at))}
-        ${prCard(t('progress.highestRate'), data.records.highestStrokeRate && `${data.records.highestStrokeRate.spm} spm`, data.records.highestStrokeRate && fmtDate(data.records.highestStrokeRate.at))}
-        ${prCard(t('progress.biggestWeek'), data.records.biggestWeekMeters && fmtDistance(data.records.biggestWeekMeters))}
-        ${prCard(t('progress.biggestMonth'), data.records.biggestMonthMeters && fmtDistance(data.records.biggestMonthMeters))}
-        ${prCard(t('progress.longestStreak'), data.records.longestStreakDays ? t('progress.nDays', { n: data.records.longestStreakDays, count: data.records.longestStreakDays }) : null)}
       </div>
+      <details class="mt">
+        <summary class="small muted" style="cursor:pointer">${esc(t('progress.moreRecords'))}</summary>
+        <div class="grid cols3 mt">
+          ${prCard(t('progress.highestWatts'), data.records.highestWatts && `${data.records.highestWatts.watts} W`, data.records.highestWatts && fmtDate(data.records.highestWatts.at))}
+          ${prCard(t('progress.highestRate'), data.records.highestStrokeRate && `${data.records.highestStrokeRate.spm} spm`, data.records.highestStrokeRate && fmtDate(data.records.highestStrokeRate.at))}
+          ${prCard(t('progress.biggestWeek'), data.records.biggestWeekMeters && fmtDistance(data.records.biggestWeekMeters))}
+          ${prCard(t('progress.biggestMonth'), data.records.biggestMonthMeters && fmtDistance(data.records.biggestMonthMeters))}
+          ${prCard(t('progress.longestStreak'), data.records.longestStreakDays ? t('progress.nDays', { n: data.records.longestStreakDays, count: data.records.longestStreakDays }) : null)}
+        </div>
+      </details>
     </div>
 
-    <div class="card">
-      <div class="card-head"><span class="icon-chip sm">${icon('medal', { size: 18 })}</span><h3>${esc(t('progress.achievements'))}</h3>
-        <span class="badge blue card-head-action">${esc(t('progress.achievementsUnlocked', { n: data.badgeCount.unlocked, total: data.badgeCount.total }))}</span></div>
-      <div class="ach-grid mt">
-        ${data.badges.map(b => `
-          <div class="ach ${b.unlocked ? 'unlocked' : 'locked'}" title="${b.unlocked ? esc(fmtDate(b.achievedAt)) : esc(t('achievements.locked'))}">
-            <span class="ic" aria-hidden="true">${b.unlocked ? icon(badgeIcon(b.badge), { size: 30 }) : icon('lock', { size: 28 })}</span>
-            <div class="nm">${esc(t('achievements.' + b.badge))}</div>
-            ${b.unlocked ? `<div class="dt">${esc(fmtDate(b.achievedAt))}</div>` : ''}
-          </div>`).join('')}
-      </div>
-    </div>
+    ${achievementsCard(data)}
 
     <div class="card">
       <h3>${esc(t('progress.consistency'))}</h3>
@@ -177,6 +163,63 @@ export async function renderProgress(el) {
 }
 
 /* ---------------- helpers ---------------- */
+
+/* Achievements — earned badges stay in view (they motivate); the still-locked
+   ones fold into a details so the grid isn't a wall of greyed-out lockboxes. */
+function achievementsCard(data) {
+  const badge = (b) => `
+    <div class="ach ${b.unlocked ? 'unlocked' : 'locked'}" title="${b.unlocked ? esc(fmtDate(b.achievedAt)) : esc(t('achievements.locked'))}">
+      <span class="ic" aria-hidden="true">${b.unlocked ? icon(badgeIcon(b.badge), { size: 30 }) : icon('lock', { size: 28 })}</span>
+      <div class="nm">${esc(t('achievements.' + b.badge))}</div>
+      ${b.unlocked ? `<div class="dt">${esc(fmtDate(b.achievedAt))}</div>` : ''}
+    </div>`;
+  const unlocked = data.badges.filter(b => b.unlocked);
+  const locked = data.badges.filter(b => !b.unlocked);
+  return `<div class="card">
+    <div class="card-head"><span class="icon-chip sm">${icon('medal', { size: 18 })}</span><h3>${esc(t('progress.achievements'))}</h3>
+      <span class="badge blue card-head-action">${esc(t('progress.achievementsUnlocked', { n: data.badgeCount.unlocked, total: data.badgeCount.total }))}</span></div>
+    ${unlocked.length
+    ? `<div class="ach-grid mt">${unlocked.map(badge).join('')}</div>`
+    : `<p class="muted small mt">${esc(t('dash.noAchievements'))}</p>`}
+    ${locked.length ? `<details class="mt">
+      <summary class="small muted" style="cursor:pointer">${esc(t('progress.showLocked', { n: locked.length }))}</summary>
+      <div class="ach-grid mt">${locked.map(badge).join('')}</div>
+    </details>` : ''}
+  </div>`;
+}
+
+/* The analytics hub — replaces the old wall of eight equal buttons with the
+   same eight tools (plus the previously-buried Benchmark explorer) grouped
+   into labelled sections, each row a calm tappable list-item. Progressive
+   disclosure: deeper analysis is here when the athlete wants it, not shouted. */
+function analyticsHub() {
+  const link = (href, iconName, label) => `
+    <a class="list-item" href="${href}" style="color:inherit">
+      <span class="li-icon accent">${icon(iconName, { size: 20 })}</span>
+      <div class="li-body"><strong>${esc(label)}</strong></div>
+      <span class="li-go">${icon('chevron-right', { size: 18 })}</span>
+    </a>`;
+  const group = (label, rows) => `<p class="eyebrow" style="margin:16px 2px 4px">${esc(label)}</p>${rows}`;
+  return `
+    <div class="section-head">
+      <span class="icon-chip">${icon('activity')}</span>
+      <div class="titles"><h2>${esc(t('explore.title'))}</h2><div class="section-sub">${esc(t('explore.sub'))}</div></div>
+    </div>
+    <div class="card stagger">
+      ${group(t('explore.planning'), link('#/plan', 'calendar', t('plan.open')))}
+      ${group(t('explore.lab'),
+    link('#/lab', 'lightbulb', t('lab.open'))
+    + link('#/athlete', 'user', t('twin.open'))
+    + link('#/optimizer', 'target', t('opt.open'))
+    + link('#/stroke', 'eye', t('stroke.open')))}
+      ${group(t('explore.racing'),
+    link('#/racelab', 'flag', t('race.open'))
+    + link('#/benchmark', 'medal', t('bench.open')))}
+      ${group(t('explore.community'),
+    link('#/observatory', 'globe', t('obs.open'))
+    + link('#/timeline', 'progress', t('timeline.open')))}
+    </div>`;
+}
 
 function ringHtml(pct, valueText, unitText) {
   const r = 56, c = 2 * Math.PI * r;

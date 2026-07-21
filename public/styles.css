@@ -196,6 +196,8 @@ nav.tabs a {
   flex: 1; max-width: 128px; text-align: center; padding: 7px 4px 6px; border-radius: 13px;
   color: var(--muted); font-size: .72rem; font-weight: 650; letter-spacing: .1px;
   transition: color .2s, background .2s, transform .15s var(--ease); position: relative;
+  /* accessible touch target (WCAG 2.5.5) */
+  min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
 nav.tabs a .ico { display: flex; align-items: center; justify-content: center; height: 26px; margin-bottom: 2px; transition: transform .25s var(--ease-spring); }
 nav.tabs a .ico .icon { width: 23px; height: 23px; }
@@ -598,6 +600,19 @@ a.list-item:hover .li-go { transform: translateX(2px); color: var(--muted); }
 .page-head { margin: 8px 2px 2px; }
 .page-head .eyebrow { margin: 0 0 3px; }
 .page-head h1 { margin: 0; }
+
+/* gentle staggered entrance for SHORT lists only (hub cards, profile entries) —
+   deliberately never applied to long lists (history, leaderboards) so
+   scrolling stays at 60fps. Rows glide up like the page settling on water. */
+.stagger > * { animation: rise-in .5s var(--ease) both; }
+.stagger > *:nth-child(1) { animation-delay: .02s; }
+.stagger > *:nth-child(2) { animation-delay: .06s; }
+.stagger > *:nth-child(3) { animation-delay: .10s; }
+.stagger > *:nth-child(4) { animation-delay: .14s; }
+.stagger > *:nth-child(5) { animation-delay: .18s; }
+.stagger > *:nth-child(6) { animation-delay: .22s; }
+.stagger > *:nth-child(n+7) { animation-delay: .26s; }
+@keyframes rise-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* dashboard readiness hero */
 .hero-top { display: flex; align-items: center; justify-content: space-between; gap: 18px; }

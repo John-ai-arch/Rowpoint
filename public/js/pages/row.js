@@ -69,7 +69,12 @@ export async function renderRow(el) {
   function header() {
     const remembered = ergManager.rememberedMachine();
     return `
-    <h1>Row</h1>
+    <div class="page-head"><h1>${esc(t('nav.row'))}</h1></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin:0 0 12px" aria-label="Row sections">
+      <a class="btn ghost sm" href="#/history">${icon('history', { size: 15 })} ${esc(t('nav.history'))}</a>
+      <a class="btn ghost sm" href="#/progress">${icon('progress', { size: 15 })} ${esc(t('nav.progress'))}</a>
+      <a class="btn ghost sm" href="#/hr">${icon('heart', { size: 15 })} ${esc(t('nav.heart'))}</a>
+    </div>
     <div class="card tight">
       <div class="row between">
         <div class="conn-state ${ergManager.state}" id="connState"><span class="pulse"></span><span id="connLabel">${STATE_LABEL[ergManager.state]}</span></div>
@@ -104,7 +109,7 @@ export async function renderRow(el) {
     } else {
       const remembered = ergManager.rememberedMachine();
       const btAvailable = ergManager.bluetoothAvailable();
-      const canSilent = btAvailable && remembered?.deviceId && remembered.kind !== 'simulator' && navigator.bluetooth?.getDevices;
+      const canSilent = btAvailable && remembered?.deviceId && remembered.kind !== 'simulator' && ergManager.silentReconnectSupported();
       // Honest per-browser explainer when Web Bluetooth isn't available — the
       // simulator still exposes every feature, so it stays offered.
       const errBox = el.querySelector('#connError');

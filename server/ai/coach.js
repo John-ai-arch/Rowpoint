@@ -159,6 +159,12 @@ Reason like a coach:
 - The pacing habit field tells you whether they chronically start pieces too hard — when true, include a pacing cue.
 - If total history is thin, keep it conservative and say the plan will sharpen as they log more sessions.
 
+Session durations — match real rowing practice, do NOT default everything to ~30 minutes:
+- Steady-state / aerobic base (UT2/UT1) sessions are long by nature: commonly 45-90 minutes of work, and 90-120+ minutes for experienced athletes with a deep base, especially in a base-building phase. A 30-minute "steady" piece is a short session, appropriate only for beginners, low recent volume, or a deliberately easy day.
+- Long aerobic sessions specifically target 60-120+ minutes; prescribe toward the top of that band only when the athlete's recent weekly volume and training age support it.
+- Scale duration to the athlete's training age, recent 28-day volume, age, and phase — a novice or someone with thin recent volume gets shorter sessions; a seasoned, high-volume athlete gets longer ones. Never jump a returning or low-volume athlete straight to a 90-minute piece.
+- Interval work (threshold/VO2max/sprint/race-pace) has less total volume (typically 30-60 minutes including a full warm-up and cool-down) because the quality, not the duration, is the stimulus. Recovery sessions are short: 20-45 minutes.
+
 Practical constraints:
 - The workout plan must be programmable on a Concept2-style monitor: time pieces 20s-9h, distance pieces 100m-50km, at most 30 intervals, interval rest 0-595s.
 - durationMinutesLow/High is the whole session including warm-up and cool-down.
@@ -279,6 +285,27 @@ function normalizeRecommendation(rec, analysis) {
  * histories produce different recommendations and the same athlete's
  * recommendation evolves as their history changes.
  */
+/**
+ * Aerobic-session duration scaled to the athlete's capacity, so steady and
+ * long-aerobic work reaches the realistic 45-120+ minute range for seasoned,
+ * high-volume rowers while staying conservative for novices or low recent
+ * volume. Capacity tier is read from recent 28-day training volume and 2k
+ * fitness. Pure/deterministic (safe for the analysis-engine fallback).
+ */
+function aerobicMins(a, { long = false } = {}) {
+  const weekly = (a?.volume?.last28d?.minutes || 0) / 4; // avg weekly minutes
+  const split = a?.athlete?.best2kSplitS || null;
+  let tier = 0;
+  if (weekly >= 150) tier = 1;   // ~2.5 h/week
+  if (weekly >= 300) tier = 2;   // ~5 h/week
+  if (weekly >= 480) tier = 3;   // ~8 h/week — serious base
+  if (split && split <= 105) tier = Math.max(tier, 2); // ~sub-7:00 2k
+  if (split && split <= 95) tier = Math.max(tier, 3);  // ~sub-6:20 2k
+  return (long
+    ? [[45, 60], [55, 75], [70, 95], [90, 120]]
+    : [[35, 50], [40, 60], [50, 75], [60, 90]])[tier];
+}
+
 export function fallbackRecommendation(analysis) {
   const a = analysis;
   const factors = [];
@@ -316,12 +343,12 @@ export function fallbackRecommendation(analysis) {
   // 4. High HR drift / declining aerobic efficiency → aerobic development.
   if (hr.driftRecentPct !== null && hr.driftRecentPct >= 6) {
     factors.push(`average HR drift of +${hr.driftRecentPct}% within recent sessions`);
-    return pick('steady_state', [40, 60], 'low',
+    return pick('steady_state', aerobicMins(a), 'low',
       `Your heart rate is drifting upward noticeably within sessions (+${hr.driftRecentPct}% second half vs first), which points at aerobic durability as the limiter. Steady low-intensity work is what fixes that.`);
   }
   if (hr.aerobicEfficiencyTrend === 'declining') {
     factors.push('aerobic efficiency (speed per heartbeat) trending down');
-    return pick('steady_state', [40, 60], 'low',
+    return pick('steady_state', aerobicMins(a), 'low',
       'Your speed per heartbeat on aerobic work has slipped recently. A block of relaxed steady-state rebuilds the base that everything else sits on.');
   }
 
@@ -357,7 +384,7 @@ export function fallbackRecommendation(analysis) {
     }
     if (d.anaerobicPct >= 55) {
       factors.push(`${d.anaerobicPct}% of recent minutes at threshold intensity or above`);
-      return pick('long_aerobic', [50, 75], 'low',
+      return pick('long_aerobic', aerobicMins(a, { long: true }), 'low',
         `More than half of your recent training is at threshold or above — the ratio is inverted. A longer easy aerobic row restores the 80/20 balance that makes the hard days count.`);
     }
   }
@@ -379,7 +406,8 @@ export function fallbackRecommendation(analysis) {
   }
   if (!dueForHard) factors.push(`last hard session was only ${rec.daysSinceLastHard} day(s) ago`);
   factors.push(`goal: ${goal.type.replaceAll('_', ' ')}`);
-  const mins = goal.type === 'weight_class' ? [45, 70] : [35, 60];
+  // Weight-class athletes benefit from longer fat-oxidation aerobic work.
+  const mins = goal.type === 'weight_class' ? aerobicMins(a, { long: true }) : aerobicMins(a);
   return pick('steady_state', mins, goal.type === 'return_from_injury' ? 'very_low' : 'low',
     dueForHard
       ? 'Steady aerobic work is the backbone of your goal — relaxed pace, consistent rhythm, and let the fitness compound.'

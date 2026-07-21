@@ -59,7 +59,7 @@ export async function renderAuth(el) {
     ${oauthButtonsHtml()}`;
 
   function signupHtml() {
-    const dots = `<div class="step-dots">${[1, 2, 3].map(i => `<span class="d ${i <= step ? 'on' : ''}"></span>`).join('')}</div>`;
+    const dots = `<div class="step-dots">${[1, 2, 3, 4].map(i => `<span class="d ${i <= step ? 'on' : ''}"></span>`).join('')}</div>`;
     if (step === 1) return `${dots}<h2>${esc(t('auth.createAccount'))}</h2>
       <label class="field"><span>${esc(t('auth.iAmA'))}</span>
         <div class="seg" role="radiogroup">
@@ -75,8 +75,8 @@ export async function renderAuth(el) {
       <button id="next1" style="width:100%">${esc(t('common.continue'))}</button>
       ${oauthButtonsHtml()}`;
 
-    if (step === 2) return `${dots}<h2>${esc(t('onboarding.profileTitle'))}</h2>
-      <p class="muted small">${esc(t('onboarding.profileSub'))}</p>
+    if (step === 2) return `${dots}<h2>${esc(t('onboarding.aboutTitle'))}</h2>
+      <p class="muted small">${esc(t('onboarding.aboutSub'))}</p>
       <div class="grid cols2">
         <label class="field"><span>${esc(t('onboarding.birthYear'))}</span><input id="birthYear" type="number" min="1920" max="2020" value="${data.birthYear || ''}"></label>
         <label class="field"><span>${esc(t('onboarding.weightKg'))}</span><input id="weightKg" type="number" min="30" max="200" value="${data.weightKg || ''}"></label>
@@ -84,6 +84,10 @@ export async function renderAuth(el) {
       <label class="field"><span>${esc(t('onboarding.best2k'))}</span><input id="best2k" placeholder="7:45" value="${esc(data.best2k || '')}"></label>
       <label class="field"><span>${esc(t('onboarding.units'))}</span>
         <select id="units"><option value="metric" ${data.units === 'metric' ? 'selected' : ''}>${esc(t('onboarding.metric'))}</option><option value="imperial" ${data.units === 'imperial' ? 'selected' : ''}>${esc(t('onboarding.imperial'))}</option></select></label>
+      <div class="row"><button class="secondary" id="back2">${esc(t('common.back'))}</button><button id="next2" style="flex:1">${esc(t('common.continue'))}</button></div>`;
+
+    if (step === 3) return `${dots}<h2>${esc(t('onboarding.goalTitle'))}</h2>
+      <p class="muted small">${esc(t('onboarding.goalSub'))}</p>
       <label class="field"><span>${esc(t('onboarding.primaryGoal'))}</span>
         <select id="goalType">
           <option value="general_fitness" ${data.goalType === 'general_fitness' ? 'selected' : ''}>${esc(t('onboarding.goalGeneral'))}</option>
@@ -97,7 +101,7 @@ export async function renderAuth(el) {
         <label class="field"><span>${esc(t('onboarding.eventDate'))}</span><input id="goalTargetDate" type="date" value="${data.goalTargetDate || ''}"></label>
       </div>
       <label class="field"><span>${esc(t('onboarding.weeklySessions'))}</span><input id="goalWeeklySessions" type="number" min="0" max="28" value="${data.goalWeeklySessions ?? 4}"></label>
-      <div class="row"><button class="secondary" id="back2">${esc(t('common.back'))}</button><button id="next2" style="flex:1">${esc(t('common.continue'))}</button></div>`;
+      <div class="row"><button class="secondary" id="back3">${esc(t('common.back'))}</button><button id="next3" style="flex:1">${esc(t('common.continue'))}</button></div>`;
 
     return `${dots}<h2>${esc(t('onboarding.researchTitle'))}</h2>
       <div class="notice mb">
@@ -107,7 +111,7 @@ export async function renderAuth(el) {
       <div class="toggle"><div><strong>${esc(t('onboarding.researchToggle'))}</strong></div>
         <label class="switch"><input type="checkbox" id="research" ${data.researchOptIn ? 'checked' : ''}><span class="sl"></span></label></div>
       <p class="muted small">${esc(t('onboarding.researchSeparate'))}</p>
-      <div class="row mt"><button class="secondary" id="back3">${esc(t('common.back'))}</button><button id="createBtn" style="flex:1">${esc(t('auth.createAccountCta'))}</button></div>`;
+      <div class="row mt"><button class="secondary" id="back4">${esc(t('common.back'))}</button><button id="createBtn" style="flex:1">${esc(t('auth.createAccountCta'))}</button></div>`;
   }
 
   /* ---------------- Google Identity Services ---------------- */
@@ -268,14 +272,23 @@ export async function renderAuth(el) {
     });
     el.querySelector('#back2')?.addEventListener('click', () => { step = 1; draw(); });
     el.querySelector('#next2')?.addEventListener('click', () => {
+      // Step 2 — "About you": basics only, no wall of inputs.
       Object.assign(data, {
-        birthYear: val('#birthYear'), weightKg: val('#weightKg'), best2k: val('#best2k'),
-        units: val('#units'), goalType: val('#goalType'), goalTargetEvent: val('#goalTargetEvent'),
-        goalTargetDate: val('#goalTargetDate'), goalWeeklySessions: val('#goalWeeklySessions'),
+        birthYear: val('#birthYear'), weightKg: val('#weightKg'),
+        best2k: val('#best2k'), units: val('#units'),
       });
       step = 3; draw();
     });
     el.querySelector('#back3')?.addEventListener('click', () => { step = 2; draw(); });
+    el.querySelector('#next3')?.addEventListener('click', () => {
+      // Step 3 — "Your goal": what the coach plans around.
+      Object.assign(data, {
+        goalType: val('#goalType'), goalTargetEvent: val('#goalTargetEvent'),
+        goalTargetDate: val('#goalTargetDate'), goalWeeklySessions: val('#goalWeeklySessions'),
+      });
+      step = 4; draw();
+    });
+    el.querySelector('#back4')?.addEventListener('click', () => { step = 3; draw(); });
     el.querySelector('#createBtn')?.addEventListener('click', async () => {
       data.researchOptIn = el.querySelector('#research').checked;
       const best2kSeconds = parse2k(data.best2k);

@@ -145,7 +145,7 @@ export async function renderDashboard(el) {
     whyBtn.onclick = () => {
       const d = content.querySelector('#coachDetail');
       d.style.display = d.style.display === 'none' ? '' : 'none';
-      whyBtn.textContent = d.style.display === 'none' ? 'Why this workout?' : 'Hide details';
+      whyBtn.textContent = d.style.display === 'none' ? t('coach.why') : t('coach.hideDetails');
     };
   }
 }
@@ -218,23 +218,23 @@ function renderCoachCard(suggestion) {
   // §11.5 disclosure: machine-generated coaching is always labeled as such,
   // and the generation path (language model vs deterministic analysis) is
   // never blurred — phrased for athletes, not developers.
-  const sourceLabel = suggestion.source === 'llm' ? 'AI-generated · AI coach'
-    : suggestion.source === 'guardrail' ? 'Coach plan first'
-      : 'AI-generated · training analysis';
+  const sourceLabel = suggestion.source === 'llm' ? t('coach.srcLlm')
+    : suggestion.source === 'guardrail' ? t('coach.srcGuardrail')
+      : t('coach.srcAnalysis');
   const sourceIcon = suggestion.source === 'guardrail' ? 'flag' : 'sparkle';
   const confidence = suggestion.confidence || rec.confidence;
-  const dur = Array.isArray(w.durationMinutes) ? `${w.durationMinutes[0]}–${w.durationMinutes[1]} min` : null;
+  const dur = Array.isArray(w.durationMinutes) ? t('coach.minRange', { lo: w.durationMinutes[0], hi: w.durationMinutes[1] }) : null;
   const targets = [
-    w.targetPaceSPer500m ? `target ${fmtSplit(w.targetPaceSPer500m)}/500m` : null,
-    Array.isArray(w.targetHrPct) ? `HR ${w.targetHrPct[0]}–${w.targetHrPct[1]}% of max` : null,
-    w.targetStrokeRate ? `rate ${w.targetStrokeRate}` : null,
+    w.targetPaceSPer500m ? t('coach.target', { pace: fmtSplit(w.targetPaceSPer500m) }) : null,
+    Array.isArray(w.targetHrPct) ? t('coach.hrRange', { lo: w.targetHrPct[0], hi: w.targetHrPct[1] }) : null,
+    w.targetStrokeRate ? t('coach.rate', { spm: w.targetStrokeRate }) : null,
   ].filter(Boolean).join(' · ');
 
   if (overridden) {
     return `<div class="card ai-card">
       <div class="card-head">
         <span class="icon-chip">${icon('flag', { size: 20 })}</span>
-        <div class="titles"><h3 style="margin:0">Today's plan</h3><span class="ai-tag">Replaced by your coach</span></div>
+        <div class="titles"><h3 style="margin:0">${esc(t('coach.todaysPlan'))}</h3><span class="ai-tag">${esc(t('coach.replacedByCoach'))}</span></div>
       </div>
       <p style="margin:0">${esc(suggestion.text)}</p></div>`;
   }
@@ -243,31 +243,31 @@ function renderCoachCard(suggestion) {
     <div class="card ai-card">
       <div class="card-head">
         <span class="icon-chip">${icon(sourceIcon, { size: 20 })}</span>
-        <div class="titles"><h3 style="margin:0">Today's coach recommendation</h3>
+        <div class="titles"><h3 style="margin:0">${esc(t('coach.todaysRec'))}</h3>
           <span class="ai-tag">${esc(sourceLabel)}</span></div>
       </div>
       <p><strong>${esc(rec.title || '')}</strong>
-        ${confidence ? `<span class="badge ${confidence === 'high' ? 'green' : confidence === 'medium' ? 'blue' : 'gray'}">${esc(confidence)} confidence</span>` : ''}</p>
+        ${confidence ? `<span class="badge ${confidence === 'high' ? 'green' : confidence === 'medium' ? 'blue' : 'gray'}">${esc(t('coach.conf_' + confidence))}</span>` : ''}</p>
       ${w.description ? `<p>${esc(w.description)}</p>` : ''}
       ${dur || targets ? `<p class="muted small">${[dur, targets].filter(Boolean).join(' · ')}</p>` : ''}
       <p>${esc(rec.explanation || suggestion.text || '')}</p>
-      ${rec.healthPrompt ? '<div class="notice warn small">This pattern may be worth mentioning to your coach or a medical professional — RowPoint can\'t make a clinical assessment.</div>' : ''}
+      ${rec.healthPrompt ? `<div class="notice warn small">${esc(t('coach.healthPrompt'))}</div>` : ''}
 
       <div id="coachDetail" style="display:none">
-        ${rec.whyAppropriate ? `<p class="small"><strong>Why this fits you now:</strong> ${esc(rec.whyAppropriate)}</p>` : ''}
-        ${rec.targetSystem ? `<p class="small"><strong>Targets:</strong> ${esc(rec.targetSystem)}</p>` : ''}
-        ${rec.expectedAdaptations ? `<p class="small"><strong>Expected adaptations:</strong> ${esc(rec.expectedAdaptations)}</p>` : ''}
-        ${rec.recoveryAdvice ? `<p class="small"><strong>Recovery:</strong> ${esc(rec.recoveryAdvice)}</p>` : ''}
-        ${Array.isArray(rec.keyFactors) && rec.keyFactors.length ? `<p class="small"><strong>Based on:</strong></p>
+        ${rec.whyAppropriate ? `<p class="small"><strong>${esc(t('coach.whyFits'))}</strong> ${esc(rec.whyAppropriate)}</p>` : ''}
+        ${rec.targetSystem ? `<p class="small"><strong>${esc(t('coach.targets'))}</strong> ${esc(rec.targetSystem)}</p>` : ''}
+        ${rec.expectedAdaptations ? `<p class="small"><strong>${esc(t('coach.adaptations'))}</strong> ${esc(rec.expectedAdaptations)}</p>` : ''}
+        ${rec.recoveryAdvice ? `<p class="small"><strong>${esc(t('coach.recovery'))}</strong> ${esc(rec.recoveryAdvice)}</p>` : ''}
+        ${Array.isArray(rec.keyFactors) && rec.keyFactors.length ? `<p class="small"><strong>${esc(t('coach.basedOn'))}</strong></p>
           <ul class="small muted">${rec.keyFactors.map(f => `<li>${esc(f)}</li>`).join('')}</ul>` : ''}
-        ${rec.alternative ? `<p class="small"><strong>Alternative — ${esc(rec.alternative.title)}:</strong> ${esc(rec.alternative.description)}</p>` : ''}
-        <p class="muted small">Generated from your complete training history — the recommendation evolves as you train.</p>
+        ${rec.alternative ? `<p class="small"><strong>${esc(t('coach.alternative', { title: rec.alternative.title }))}</strong> ${esc(rec.alternative.description)}</p>` : ''}
+        <p class="muted small">${esc(t('coach.evolvesNote'))}</p>
       </div>
 
       <div class="row mt">
         ${!rec.restDay && rec.category !== 'coach_assignment'
-    ? '<button class="secondary sm" id="startCoachSession">Start this session</button>' : ''}
-        <button class="ghost sm" id="coachWhyBtn">Why this workout?</button>
+    ? `<button class="secondary sm" id="startCoachSession">${esc(t('coach.startSession'))}</button>` : ''}
+        <button class="ghost sm" id="coachWhyBtn">${esc(t('coach.why'))}</button>
       </div>
     </div>`;
 }

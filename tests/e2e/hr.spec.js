@@ -46,15 +46,17 @@ test('unverified login routes to the verification screen — no session, no skip
   await page.close();
 });
 
-test('Heart Rate Monitors is a primary nav section with full device management', async ({ browser, request }) => {
+test('Heart Rate Monitors screen offers full device management', async ({ browser, request }) => {
   await signupApi(request, 'pulse@hr.com');
   ctx = await browser.newContext({ storageState: englishState });
   const page = await ctx.newPage();
   await loginUI(page, 'pulse@hr.com');
 
-  // primary navigation entry
-  await expect(page.locator('nav.tabs a', { hasText: 'Heart Rate' })).toBeVisible();
-  await page.click('nav.tabs a[href="#/hr"]');
+  // HR is reachable from the Row area (a "Heart rate" link on the Row screen)
+  // and from Profile ▸ Devices — no longer its own primary tab after the IA
+  // redesign, but fully accessible.
+  await page.goto(`${BASE}/#/row`);
+  await page.click('a[href="#/hr"]');
   await expect(page.locator('h1')).toContainText('Heart Rate Monitors');
   // status line reflects real capability: "Disconnected" on BLE-capable
   // browsers, "Bluetooth unavailable" in headless test runs — both are

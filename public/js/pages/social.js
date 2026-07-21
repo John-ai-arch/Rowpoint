@@ -3,17 +3,20 @@ import { api, state, toast, esc } from '../api.js';
 import { icon } from '../icons.js';
 import { confirmDialog, promptDialog } from '../components/dialog.js';
 
-export async function renderSocial(el) {
+export async function renderSocial(el, opts = {}) {
+  const { embedded = false } = opts;
+  // Embedded in the Community hub, the seg control supplies the heading.
+  const head = embedded ? '' : `<div class="page-head"><h1>Social</h1></div>`;
   if (!state.user.emailVerified) {
-    el.innerHTML = `<h1>Social</h1><div class="notice warn">Verify your email to connect with other rowers.</div>`;
+    el.innerHTML = `${head}<div class="notice warn">Verify your email to connect with other rowers.</div>`;
     return;
   }
-  el.innerHTML = `<h1>Social</h1><p class="muted">Loading…</p>`;
+  el.innerHTML = `${head}<p class="muted">Loading…</p>`;
   const [{ connections, incoming, outgoing }, { groups }] = await Promise.all([
     api('/social/connections'), api('/groups/mine'),
   ]);
 
-  el.innerHTML = `<div class="page-head"><h1>Social</h1></div>
+  el.innerHTML = `${head}
     <div class="card">
       <div class="card-head"><span class="icon-chip sm">${icon('search', { size: 18 })}</span><h3>Find someone by email</h3></div>
       <div class="row"><input id="q" type="email" placeholder="their exact email address" style="flex:1"><button id="searchBtn">${icon('search', { size: 16 })} Search</button></div>
@@ -83,20 +86,20 @@ export async function renderSocial(el) {
 
   el.querySelectorAll('[data-acc]').forEach(b => b.onclick = async () => {
     await api(`/social/connections/${b.dataset.acc}/respond`, { method: 'POST', body: { accept: true } });
-    toast('Connected!', 'success'); renderSocial(el);
+    toast('Connected!', 'success'); renderSocial(el, opts);
   });
   el.querySelectorAll('[data-dec]').forEach(b => b.onclick = async () => {
     await api(`/social/connections/${b.dataset.dec}/respond`, { method: 'POST', body: { accept: false } });
-    renderSocial(el);
+    renderSocial(el, opts);
   });
   el.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
     await api(`/social/connections/${b.dataset.rm}`, { method: 'DELETE' });
-    toast('Connection removed.'); renderSocial(el);
+    toast('Connection removed.'); renderSocial(el, opts);
   });
   el.querySelectorAll('[data-blk]').forEach(b => b.onclick = async () => {
     if (!(await confirmDialog('Block this user? They won\'t be able to find or contact you.', { title: 'Block user', confirmText: 'Block', danger: true }))) return;
     await api('/social/block', { method: 'POST', body: { userId: b.dataset.blk } });
-    toast('Blocked.'); renderSocial(el);
+    toast('Blocked.'); renderSocial(el, opts);
   });
   el.querySelectorAll('[data-rep]').forEach(b => b.onclick = async () => {
     const reason = await promptDialog('What\'s wrong? (e.g. harassment, spam)', { title: 'Report user', confirmText: 'Send report', multiline: true });

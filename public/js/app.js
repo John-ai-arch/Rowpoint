@@ -24,8 +24,10 @@ import { renderTeams } from './pages/teams.js';
 import { renderTeamDetail } from './pages/teamDetail.js';
 import { renderLive } from './pages/live.js';
 import { renderSocial } from './pages/social.js';
+import { renderCommunity } from './pages/community.js';
 import { renderGroup } from './pages/group.js';
 import { renderWellness } from './pages/wellness.js';
+import { renderProfile } from './pages/profile.js';
 import { renderSettings } from './pages/settings.js';
 import { renderEquipment } from './pages/equipment.js';
 import { renderIntegrations } from './pages/integrations.js';
@@ -34,36 +36,46 @@ import { renderResearchDashboard } from './pages/researchDashboard.js';
 import { renderHrm } from './pages/hrm.js';
 import { hrManager } from './ble/sensors.js';
 
+/* Four primary tabs — Home · Row · Community · Profile. Every screen keeps a
+   home so nothing is lost: the deep analytics suite and workout history live
+   under Row (train → review → analyze); Teams + Social merge into Community;
+   account, devices, and role-gated tools live under Profile. The `tab` field
+   is only which primary tab lights up while the screen is open. */
 const routes = [
   { re: /^\/?$/, page: renderDashboard, tab: 'home' },
   { re: /^\/login/, page: renderAuth, public: true },
-  { re: /^\/row/, page: renderRow, tab: 'row' },
-  { re: /^\/progress/, page: renderProgress, tab: 'progress' },
-  { re: /^\/plan/, page: renderPlan, tab: 'progress' },
-  { re: /^\/lab/, page: renderLab, tab: 'progress' },
-  { re: /^\/athlete/, page: renderTwin, tab: 'progress' },
-  { re: /^\/optimizer/, page: renderOptimizer, tab: 'progress' },
-  { re: /^\/racelab/, page: renderRaceLab, tab: 'progress' },
-  { re: /^\/observatory/, page: renderObservatory, tab: 'progress' },
-  { re: /^\/benchmark/, page: renderBenchmark, tab: 'progress' },
-  { re: /^\/stroke/, page: renderStroke, tab: 'row' },
-  { re: /^\/timeline/, page: renderTimeline, tab: 'progress' },
-  { re: /^\/history$/, page: renderHistory, tab: 'history' },
-  { re: /^\/journal/, page: renderJournal, tab: 'history' },
-  { re: /^\/workout\/([\w-]+)/, page: renderWorkoutDetail, tab: 'history' },
-  { re: /^\/builder/, page: renderBuilder, tab: 'row' },
-  { re: /^\/teams$/, page: renderTeams, tab: 'teams' },
-  { re: /^\/team\/([\w-]+)/, page: renderTeamDetail, tab: 'teams' },
-  { re: /^\/live\/([\w:.-]+)/, page: renderLive, tab: 'teams' },
-  { re: /^\/social$/, page: renderSocial, tab: 'social' },
-  { re: /^\/group\/([\w-]+)/, page: renderGroup, tab: 'social' },
   { re: /^\/wellness/, page: renderWellness, tab: 'home' },
-  { re: /^\/hr/, page: renderHrm, tab: 'hr' },
-  { re: /^\/settings/, page: renderSettings, tab: 'home' },
-  { re: /^\/equipment/, page: renderEquipment, tab: 'home' },
-  { re: /^\/integrations/, page: renderIntegrations, tab: 'home' },
-  { re: /^\/admin/, page: renderAdmin, tab: 'home' },
-  { re: /^\/research$/, page: renderResearchDashboard, tab: 'home' },
+
+  { re: /^\/row/, page: renderRow, tab: 'row' },
+  { re: /^\/builder/, page: renderBuilder, tab: 'row' },
+  { re: /^\/stroke/, page: renderStroke, tab: 'row' },
+  { re: /^\/hr/, page: renderHrm, tab: 'row' },
+  { re: /^\/history$/, page: renderHistory, tab: 'row' },
+  { re: /^\/journal/, page: renderJournal, tab: 'row' },
+  { re: /^\/workout\/([\w-]+)/, page: renderWorkoutDetail, tab: 'row' },
+  { re: /^\/progress/, page: renderProgress, tab: 'row' },
+  { re: /^\/plan/, page: renderPlan, tab: 'row' },
+  { re: /^\/lab/, page: renderLab, tab: 'row' },
+  { re: /^\/athlete/, page: renderTwin, tab: 'row' },
+  { re: /^\/optimizer/, page: renderOptimizer, tab: 'row' },
+  { re: /^\/racelab/, page: renderRaceLab, tab: 'row' },
+  { re: /^\/observatory/, page: renderObservatory, tab: 'row' },
+  { re: /^\/benchmark/, page: renderBenchmark, tab: 'row' },
+  { re: /^\/timeline/, page: renderTimeline, tab: 'row' },
+
+  { re: /^\/community/, page: renderCommunity, tab: 'community' },
+  { re: /^\/teams$/, page: renderTeams, tab: 'community' },
+  { re: /^\/team\/([\w-]+)/, page: renderTeamDetail, tab: 'community' },
+  { re: /^\/live\/([\w:.-]+)/, page: renderLive, tab: 'community' },
+  { re: /^\/social$/, page: renderSocial, tab: 'community' },
+  { re: /^\/group\/([\w-]+)/, page: renderGroup, tab: 'community' },
+
+  { re: /^\/profile/, page: renderProfile, tab: 'profile' },
+  { re: /^\/settings/, page: renderSettings, tab: 'profile' },
+  { re: /^\/equipment/, page: renderEquipment, tab: 'profile' },
+  { re: /^\/integrations/, page: renderIntegrations, tab: 'profile' },
+  { re: /^\/admin/, page: renderAdmin, tab: 'profile' },
+  { re: /^\/research$/, page: renderResearchDashboard, tab: 'profile' },
 ];
 
 let cleanup = null;
@@ -104,7 +116,6 @@ function shell(contentEl, activeTab) {
       <div class="actions">
         ${pending ? `<span class="badge amber" title="${esc(t('nav.pendingTitle'))}">${esc(t('nav.pending', { n: pending }))}</span>` : ''}
         ${u ? `<button class="ghost sm icon-btn" id="notifBtn" aria-label="${esc(t('nav.notifications'))}">${icon('bell', { size: 20 })}<span id="notifCount"></span></button>` : ''}
-        ${u ? `<a href="#/settings" class="btn ghost sm icon-btn" aria-label="${esc(t('nav.settings'))}">${icon('gear', { size: 20 })}</a>` : ''}
       </div>
     </header>
     <main id="page"></main>
@@ -112,11 +123,8 @@ function shell(contentEl, activeTab) {
     <nav class="tabs" aria-label="Main">
       ${tab('#/', 'home', 'home', t('nav.home'))}
       ${tab('#/row', 'row', 'oar', t('nav.row'))}
-      ${tab('#/progress', 'progress', 'progress', t('nav.progress'))}
-      ${tab('#/hr', 'hr', 'heart', t('nav.heart'))}
-      ${tab('#/history', 'history', 'history', t('nav.history'))}
-      ${tab('#/teams', 'teams', 'flag', t('nav.teams'))}
-      ${tab('#/social', 'social', 'social', t('nav.social'))}
+      ${tab('#/community', 'community', 'social', t('nav.community'))}
+      ${tab('#/profile', 'profile', 'user', t('nav.profile'))}
     </nav>` : ''}
   `;
   document.getElementById('page').appendChild(contentEl);

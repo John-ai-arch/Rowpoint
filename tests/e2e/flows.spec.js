@@ -21,7 +21,8 @@ async function signupUI(page, request, { email, name, type, teamCode }) {
   await page.fill('#password', 'password123');
   if (teamCode) await page.fill('#teamCode', teamCode);
   await page.click('#next1');
-  await page.click('#next2'); // accept profile defaults
+  await page.click('#next2'); // accept "about you" defaults
+  await page.click('#next3'); // accept "your goal" defaults
   await expect(page.locator('h2')).toContainText('research');
   await expect(page.locator('#research')).toBeChecked(); // §5.1 opt-out default, shown plainly
   await page.click('#createBtn');
@@ -39,7 +40,7 @@ async function signupUI(page, request, { email, name, type, teamCode }) {
 let teamCode = '';
 let coachCtx, rowerCtx;
 
-test('coach signs up through the 3-step flow and gets a team code', async ({ browser, request }) => {
+test('coach signs up through the multi-step flow and gets a team code', async ({ browser, request }) => {
   coachCtx = await browser.newContext({ storageState: englishState });
   const page = await coachCtx.newPage();
   await signupUI(page, request, { email: 'coach@e2e.com', name: 'Coach Carla', type: 'coach' });

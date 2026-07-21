@@ -2,15 +2,19 @@
 import { api, state, toast, esc } from '../api.js';
 import { icon } from '../icons.js';
 
-export async function renderTeams(el) {
+export async function renderTeams(el, opts = {}) {
+  const { embedded = false } = opts;
+  // When embedded inside the Community hub the seg control supplies the heading,
+  // so the page-head is suppressed to avoid a redundant second title.
+  const head = embedded ? '' : `<div class="page-head"><h1>Teams</h1></div>`;
   if (!state.user.emailVerified) {
-    el.innerHTML = `<h1>Teams</h1><div class="notice warn">Verify your email to create or join teams.</div>`;
+    el.innerHTML = `${head}<div class="notice warn">Verify your email to create or join teams.</div>`;
     return;
   }
-  el.innerHTML = `<h1>Teams</h1><p class="muted">Loading…</p>`;
+  el.innerHTML = `${head}<p class="muted">Loading…</p>`;
   const { coached, joined } = await api('/teams');
 
-  el.innerHTML = `<div class="page-head"><h1>Teams</h1></div>
+  el.innerHTML = `${head}
     ${coached.length ? `
     <div class="section-head"><span class="icon-chip">${icon('flag')}</span><div class="titles"><h2>Teams you coach</h2></div></div>
     ${coached.map(t => `
@@ -50,16 +54,16 @@ export async function renderTeams(el) {
   el.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => { navigator.clipboard?.writeText(b.dataset.copy); toast('Code copied.'); });
   el.querySelectorAll('[data-regen]').forEach(b => b.onclick = async () => {
     const { code } = await api(`/teams/${b.dataset.regen}/regenerate-code`, { method: 'POST' });
-    toast(`New code: ${code}`, 'success'); renderTeams(el);
+    toast(`New code: ${code}`, 'success'); renderTeams(el, opts);
   });
   el.querySelectorAll('[data-leave]').forEach(b => b.onclick = async () => {
-    try { await api(`/teams/${b.dataset.leave}/leave`, { method: 'POST' }); toast('Left team.'); renderTeams(el); }
+    try { await api(`/teams/${b.dataset.leave}/leave`, { method: 'POST' }); toast('Left team.'); renderTeams(el, opts); }
     catch (e) { toast(e.message, 'error'); }
   });
   el.querySelector('#joinBtn')?.addEventListener('click', async () => {
     try {
       const { team } = await api('/teams/join', { method: 'POST', body: { code: el.querySelector('#joinCode').value } });
-      toast(`Joined ${team.name}!`, 'success'); renderTeams(el);
+      toast(`Joined ${team.name}!`, 'success'); renderTeams(el, opts);
     } catch (e) { toast(e.message, 'error'); }
   });
 }
